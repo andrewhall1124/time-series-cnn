@@ -4,9 +4,10 @@ import polars as pl
 from datetime import date
 from pathlib import Path
 from tqdm import tqdm
+import yfinance as yf
 
-FOLDER_DIR = Path("data/crsp_daily")
-SCHEMA = {
+CRSP_FOLDER = Path("data/crsp_daily")
+CRSP_SCHEMA = {
     "permno": pl.Int64,
     "permco": pl.Int64,
     "date": pl.Date,
@@ -22,6 +23,17 @@ SCHEMA = {
     "shrout": pl.Float64,
     "cfacshr": pl.Float64,
 }
+
+YFINANCE_SCHEMA = {
+    "date": pl.Date,
+    "ticker": pl.Categorical,
+    "close": pl.Float64,
+    "high": pl.Float64,
+    "low": pl.Float64,
+    "open": pl.Float64,
+    "volume": pl.Int64
+}
+
 
 def load_daily_crsp_file(
     start_date: date | None = None, end_date: date | None = None
@@ -40,10 +52,10 @@ def load_daily_crsp_file(
     dfs = []
     for year in tqdm(sorted(years), desc="Loading crsp daily data"):
         file_path = f"dsf_{year}.parquet"
-        df = pl.read_parquet(FOLDER_DIR / file_path)
+        df = pl.read_parquet(CRSP_FOLDER / file_path)
 
         # Clean
-        df = clean(df)
+        df = clean_crsp(df)
 
         # Append
         dfs.append(df)
@@ -56,6 +68,28 @@ def load_daily_crsp_file(
 
     return df
 
-def clean(df: pl.DataFrame):
-    df = df.cast(SCHEMA)
+
+def clean_crsp(df: pl.DataFrame):
+    df = df.cast(CRSP_SCHEMA)
     return df
+
+
+def load_yfinance(
+    tickers: str, start_date: date | None = None, end_date: date | None = None
+) -> pl.DataFrame:
+    start_date = start_date or date(1925, 12, 31)
+    end_date = end_date or date(2024, 11, 29)
+
+    df = (
+        yf.download(tickers=tickers, start=start_date, end=end_date)
+        .stack(future_stack=True)
+        .reset_index()
+    )
+
+    df = pl.from_pandas(df)
+
+    return (
+        df
+        .rename({col: col.lower() for col in df.columns})
+        .cast(YFINANCE_SCHEMA)
+    )

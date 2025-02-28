@@ -2,6 +2,22 @@ import talib
 
 
 def transform(df):
+    indicators = [
+        "rsi",
+        "william",
+        "macd",
+        "ppo",
+        "roc",
+        "cmo",
+        "sma",
+        "ema",
+        "wma",
+        "tema",
+        "cci",
+        "dmi",
+        "psar",
+    ]
+
     for period in range(6, 28):
         rsi = talib.RSI(df["close"], timeperiod=period).rename(f"rsi_{period}")
         william = talib.WILLR(
@@ -39,4 +55,7 @@ def transform(df):
         df = df.with_columns(
             rsi, william, mfi, macd, ppo, roc, cmo, sma, ema, wma, tema, cci, dmi, psar
         )
-    return df
+
+    indicators = [f"{name}_{i}" for name in indicators for i in range(6, 28)]
+
+    return df.select(['date', 'ticker'] + indicators)
