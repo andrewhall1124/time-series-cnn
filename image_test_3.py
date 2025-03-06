@@ -42,7 +42,7 @@ def get_bulk_images(df: pl.DataFrame) -> pl.DataFrame:
 
     return df
 
-def gen_image(df: pl.DataFrame, ticker: str) -> pl.DataFrame:
+def get_image_from_bulk_images(df: pl.DataFrame, ticker: str) -> pl.DataFrame:
     df = (
         df
         .filter(pl.col('ticker').eq(ticker))
@@ -61,7 +61,7 @@ print(df)
 
 for ticker in tickers:
     # Filter df by ticker and gen image
-    sub_df = gen_image(df, ticker)
+    sub_df = get_image_from_bulk_images(df, ticker)
     print(sub_df)
 
     # Plot image 
