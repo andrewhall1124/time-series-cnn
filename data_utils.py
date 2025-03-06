@@ -75,7 +75,7 @@ def clean_crsp(df: pl.DataFrame):
 
 
 def load_yfinance(
-    tickers: str, start_date: date | None = None, end_date: date | None = None
+    tickers: list[str], start_date: date | None = None, end_date: date | None = None
 ) -> pl.DataFrame:
     start_date = start_date or date(1925, 12, 31)
     end_date = end_date or date(2024, 11, 29)
