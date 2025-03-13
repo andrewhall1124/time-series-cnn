@@ -9,6 +9,7 @@ dependencies = [
     "numpy>=2.2.3",
     "pandas>=2.2.3",
     "polars>=1.22.0",
+    "scikit-learn>=1.6.1",
     "seaborn>=0.13.2",
     "ta-lib>=0.6.3",
     "torch>=2.6.0",
@@ -21,4 +22,5 @@ dependencies = [
 [dependency-groups]
 dev = [
     "ipykernel>=6.29.5",
+    "ruff>=0.9.10",
 ]
