@@ -17,6 +17,7 @@ dependencies = [
     "torchvision>=0.21.0",
     "torchviz>=0.0.3",
     "tqdm>=4.67.1",
+    "wrds>=3.3.0",
     "yfinance>=0.2.54",
 ]
 

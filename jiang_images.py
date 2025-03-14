@@ -24,8 +24,8 @@ def generate_ohlc_bars(df: pl.DataFrame, n_days: int, n_bins: int) -> np.array:
     labels = [f"{i}" for i in range(n_bins)]
     index = pl.DataFrame({"bin": [str(i) for i in range(n_bins)]})
 
-    min_value = min(df["low"].min(), df['ma'].min())
-    max_value = max(df["high"].max(), df['ma'].max())
+    min_value = min(df["low"].min(), df["ma"].min())
+    max_value = max(df["high"].max(), df["ma"].max())
     breaks = np.linspace(min_value, max_value, n_bins + 2)[1:n_bins]
 
     df = (
@@ -193,22 +193,21 @@ def generate_volumes_bars(df: pl.DataFrame, n_days: int, n_bins: int) -> np.arra
 
 def generate_images(
     df: pl.DataFrame,
+    ticker_col: str,
     look_back: int = 20,
-    # price_height: int | None = None,
-    # volume_height: int | None = None,
-    aspect_ratio: tuple[int] = (1, 1)
+    aspect_ratio: tuple[int] = (1, 1),
 ) -> None:
     width = look_back * 3
     ratio = aspect_ratio[0] / aspect_ratio[1]
-    price_height = int(width * .8 * ratio)
-    volume_height = int(width * .2 * ratio)
+    price_height = int(width * 0.8 * ratio)
+    volume_height = int(width * 0.2 * ratio)
 
-    tickers = df["ticker"].unique().sort()
+    tickers = df[ticker_col].unique().sort()
     dates = df.select("date").unique().sort("date")
     periods = get_period_pairs(dates, look_back)
     for ticker in tqdm(tickers, desc="Generating images...", position=0):
         # Subset on ticker
-        ticker_df = df.filter(pl.col("ticker").eq(ticker))
+        ticker_df = df.filter(pl.col(ticker_col).eq(ticker))
 
         for start, end in tqdm(
             periods,
@@ -239,10 +238,10 @@ def generate_images(
             )
 
 
-if __name__ == "__main__":
+def generate_yf_images():
     # Parameters
     tickers = ["BRK-A"]
-    start_date = date(1993, 1, 1) # dates are from paper
+    start_date = date(1993, 1, 1)  # dates are from paper
     end_date = date(2019, 12, 31)
     look_back = 60
 
@@ -254,8 +253,22 @@ if __name__ == "__main__":
         # Remove null values
         .drop_nulls("ma")
     )
-    print(df)
 
     # Generate 60 x 60 images
     generate_images(df, look_back=look_back, aspect_ratio=(8, 15))
 
+
+if __name__ == "__main__":
+    # Parameters
+    start_date = date(2010, 1, 1)  # dates are from paper
+    end_date = date(2019, 12, 31)
+    look_back = 20
+
+    df = (
+        du.load_daily_crsp(start_date, end_date)
+        .with_columns(pl.col("close").rolling_mean(window_size=look_back).alias("ma"))
+        .drop_nulls()
+        .sort(["permno", "date"])
+    )
+
+    generate_images(df, ticker_col='permno', look_back=look_back, aspect_ratio=(1, 1))
