@@ -195,28 +195,37 @@ def generate_images(
     df: pl.DataFrame,
     ticker_col: str,
     look_back: int = 20,
-    aspect_ratio: tuple[int] = (1, 1),
+    height: int | None = None
 ) -> None:
     width = look_back * 3
-    ratio = aspect_ratio[0] / aspect_ratio[1]
-    price_height = int(width * 0.8 * ratio)
-    volume_height = int(width * 0.2 * ratio)
+    height = height or width
+    price_height = int(round(height * 0.8))
+    volume_height = int(round(height * 0.2))
 
     tickers = df[ticker_col].unique().sort()
     dates = df.select("date").unique().sort("date")
-    periods = get_period_pairs(dates, look_back)
     for ticker in tqdm(tickers, desc="Generating images...", position=0):
         # Subset on ticker
         ticker_df = df.filter(pl.col(ticker_col).eq(ticker))
 
+        # Get valid periods for ticker
+        ticker_start = ticker_df['date'].min()
+        ticker_end = ticker_df['date'].max()
+        ticker_dates = dates.filter(pl.col('date').is_between(ticker_start, ticker_end)).sort('date')
+        ticker_periods = get_period_pairs(ticker_dates, look_back)
+
+        # Generate image for each day
         for start, end in tqdm(
-            periods,
+            ticker_periods,
             desc=f"Generating images for {ticker}",
             leave=False,
             position=1,
         ):
-            # Subset on period
+            # Subset on period (ensure all dates)
             period_df = ticker_df.filter(pl.col("date").is_between(start, end))
+
+            if len(period_df) != look_back:
+                continue
 
             # Generate image components
             ohlc_bars = generate_ohlc_bars(period_df, look_back, price_height)
@@ -228,6 +237,8 @@ def generate_images(
 
             # Stack on top of volume bars
             image = np.vstack([image, volume_bars])
+
+            assert image.shape == (height, width)
 
             # Save
             os.makedirs(f"images/{look_back}", exist_ok=True)
@@ -270,5 +281,5 @@ if __name__ == "__main__":
         .drop_nulls()
         .sort(["permno", "date"])
     )
-
-    generate_images(df, ticker_col='permno', look_back=look_back, aspect_ratio=(1, 1))
+    
+    generate_images(df, ticker_col='permno', look_back=look_back, height=64)
