@@ -185,20 +185,27 @@ def clean_raw_crsp_file(raw_file_path: str, clean_file_path: str) -> None:
 
 def load_daily_crsp(start_date: date, end_date: date) -> pl.DataFrame:
     return (
-        pl.read_parquet("data/crsp_daily.parquet")
+        pl.scan_parquet("data/crsp_daily.parquet")
+        # Filter to date range
         .filter(pl.col("date").is_between(start_date, end_date))
+        # Lag variables
         .with_columns(
             pl.col('openprc').shift(1).over('permno').alias('open'),
             pl.col('askhi').shift(1).over('permno').alias('high'),
             pl.col('bidlo').shift(1).over('permno').alias('low'),
             pl.col('prc').shift(1).over('permno').alias('close'),
         )
+        # Create cummulative return column
         .with_columns((1 + pl.col('ret')).cum_prod().over('permno').alias('cumret'))
+        # Scale pricing columns
         .with_columns(pl.col(['open', 'high', 'low', 'close']).mul(pl.col('cumret')))
+        #Sort
         .sort(["permno", "date"])
-        .rename({'vol': 'volume'})
-        .select(['date', 'permno', 'open', 'high', 'low', 'close', 'volume'])
-    )
+        # Rename
+        .rename({'vol': 'volume', 'ret': 'return'})
+        # Select
+        .select(['date', 'permno', 'open', 'high', 'low', 'close', 'volume', 'return'])
+    ).collect()
 
 
 if __name__ == "__main__":
@@ -209,6 +216,6 @@ if __name__ == "__main__":
     annotations = generate_annotations(df, 'permno', 20)
     annotations.write_csv("data/annotations_20.csv")
 
-    print(df) 
+    print(annotations) 
 
     
