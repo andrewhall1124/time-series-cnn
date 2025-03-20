@@ -15,6 +15,7 @@ logging.basicConfig(filename="training.log", level=logging.INFO, format="%(messa
 BATCH_SIZE = 2048
 NUM_WORKERS = 12
 VALIDATION_SPLIT = .8
+NUM_EPOCHS = 100
 
 # Load dataset
 in_sample_dataset = StockImagesDataset(
@@ -83,9 +84,7 @@ def validation() -> float:
     return sum(val_losses) / len(val_losses)
 
 # Training loop
-num_epochs = 1
-
-for epoch in tqdm(range(num_epochs), desc="Training"):
+for epoch in tqdm(range(NUM_EPOCHS), desc="Training"):
     model.train()
     losses = []
     
