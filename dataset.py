@@ -1,6 +1,7 @@
 import os
 import pandas as pd
 from torchvision.io import read_image
+import matplotlib.pyplot as plt
 from torch.utils.data import Dataset
 
 class StockImagesDataset(Dataset):
@@ -15,7 +16,7 @@ class StockImagesDataset(Dataset):
 
     def __getitem__(self, idx):
         img_path = os.path.join(self.img_dir, self.img_labels.iloc[idx, 0])
-        image = read_image(img_path)
+        image = read_image(img_path)[:1].float()
         label = self.img_labels.iloc[idx, 1]
         if self.transform:
             image = self.transform(image)
@@ -24,11 +25,18 @@ class StockImagesDataset(Dataset):
         return image, label
     
 if __name__ == '__main__':
-    yfd = StockImagesDataset(
-        annotations_file='data/annotations_20.csv',
+    dataset = StockImagesDataset(
+        annotations_file='data/train_annotations_20.csv',
         img_dir='images/20'
     )
 
-    print(len(yfd))
-    print(yfd[0][0].shape)
+
+    image, label = dataset[0]
+    plt.title(f"Label: {label}")
+    plt.xticks([])
+    plt.yticks([])
+    plt.imshow(image.squeeze(0), cmap='gray')
+    plt.savefig("test.png")
+
+
     

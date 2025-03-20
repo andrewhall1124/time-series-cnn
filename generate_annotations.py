@@ -18,15 +18,17 @@ file_paths_df = (
     .select('date', 'permno', 'file_path')
     .sort(['permno', 'date'])
 )
-print(file_paths_df)
 
 # Parameters
-start_date = date(2010, 1, 1)  # dates are from paper
-end_date = date(2019, 12, 31)
+train_start_date = date(2010, 1, 1)  # dates are from paper
+train_end_date = date(2012, 12, 31)
+test_start_date = date(2013, 1, 1)
+test_end_date = date(2019, 12, 31)
+
 look_back = 20
 
 df = (
-    du.load_daily_crsp(start_date, end_date)
+    du.load_daily_crsp(train_start_date, test_end_date)
     .with_columns(
         pl.col('close').rolling_mean(window_size=look_back).over('permno').alias('moving_average_price')
     )
@@ -48,7 +50,6 @@ df = (
     .select(['date', 'permno', 'return_20', 'label'])
 )
 
-print(df)
 
 annotations = (
     df.join(
@@ -56,10 +57,31 @@ annotations = (
         on=['date', 'permno'],
         how='inner'
     )
+)
+
+# Split annotations
+train_annotations = (
+    annotations
+    # Filter to first 30% of data
+    .filter(pl.col('date').is_between(train_start_date, train_end_date))
+    .sort(['permno', 'date'])
     .select(
         pl.col('file_path').alias('file'),
         'label'
     )
 )
+print(train_annotations)
+train_annotations.write_csv("data/train_annotations_20.csv")
 
-annotations.write_csv("data/annotations_20.csv")
+test_annotations = (
+    annotations
+    # Filter to second 70% of data
+    .filter(pl.col('date').is_between(test_start_date, test_end_date))
+    .sort(['permno', 'date'])
+    .select(
+        pl.col('file_path').alias('file'),
+        'label'
+    )
+)
+print(test_annotations)
+test_annotations.write_csv("data/test_annotations_20.csv")

@@ -12,3 +12,5 @@ wheels/
 # Data 
 data
 images
+*.pth
+*.log
