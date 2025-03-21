@@ -221,6 +221,12 @@ def generate_images(
             leave=False,
             position=1,
         ):
+            image_folder = f"images/{look_back}/{end.strftime('%Y%m%d')}"
+            image_path = f"{image_folder}/{ticker}_{end.strftime('%Y%m%d')}_{look_back}.png"
+
+            if os.path.exists(image_path):
+                continue
+
             # Subset on period (ensure all dates)
             period_df = ticker_df.filter(pl.col("date").is_between(start, end))
 
@@ -241,9 +247,9 @@ def generate_images(
             assert image.shape == (height, width)
 
             # Save
-            os.makedirs(f"images/{look_back}", exist_ok=True)
+            os.makedirs(image_folder, exist_ok=True)
             plt.imsave(
-                f"images/{look_back}/{ticker}_{end.strftime('%Y%m%d')}_{look_back}.png",
+                image_path,
                 image,
                 cmap="grey",
             )
