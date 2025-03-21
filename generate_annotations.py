@@ -20,9 +20,9 @@ file_paths_df = (
 )
 
 # Parameters
-train_start_date = date(2010, 1, 1)  # dates are from paper
-train_end_date = date(2012, 12, 31)
-test_start_date = date(2013, 1, 1)
+train_start_date = date(1993, 1, 1)  # dates are from paper
+train_end_date = date(2000, 12, 31)
+test_start_date = date(2001, 1, 1)
 test_end_date = date(2019, 12, 31)
 
 look_back = 20

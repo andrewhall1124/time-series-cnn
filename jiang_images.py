@@ -271,7 +271,7 @@ def generate_yf_images():
 
 if __name__ == "__main__":
     # Parameters
-    start_date = date(2010, 1, 1)  # dates are from paper
+    start_date = date(1993, 1, 1)  # dates are from paper
     end_date = date(2019, 12, 31)
     look_back = 20
 
