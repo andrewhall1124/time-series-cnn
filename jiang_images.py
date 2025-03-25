@@ -192,10 +192,7 @@ def generate_volumes_bars(df: pl.DataFrame, n_days: int, n_bins: int) -> np.arra
 
 
 def generate_images(
-    df: pl.DataFrame,
-    ticker_col: str,
-    look_back: int = 20,
-    height: int | None = None
+    df: pl.DataFrame, ticker_col: str, look_back: int = 20, height: int | None = None
 ) -> None:
     width = look_back * 3
     height = height or width
@@ -209,9 +206,11 @@ def generate_images(
         ticker_df = df.filter(pl.col(ticker_col).eq(ticker))
 
         # Get valid periods for ticker
-        ticker_start = ticker_df['date'].min()
-        ticker_end = ticker_df['date'].max()
-        ticker_dates = dates.filter(pl.col('date').is_between(ticker_start, ticker_end)).sort('date')
+        ticker_start = ticker_df["date"].min()
+        ticker_end = ticker_df["date"].max()
+        ticker_dates = dates.filter(
+            pl.col("date").is_between(ticker_start, ticker_end)
+        ).sort("date")
         ticker_periods = get_period_pairs(ticker_dates, look_back)
 
         # Generate image for each day
@@ -222,7 +221,9 @@ def generate_images(
             position=1,
         ):
             image_folder = f"images/{look_back}/{end.strftime('%Y%m%d')}"
-            image_path = f"{image_folder}/{ticker}_{end.strftime('%Y%m%d')}_{look_back}.png"
+            image_path = (
+                f"{image_folder}/{ticker}_{end.strftime('%Y%m%d')}_{look_back}.png"
+            )
 
             if os.path.exists(image_path):
                 continue
@@ -281,11 +282,10 @@ if __name__ == "__main__":
     end_date = date(2019, 12, 31)
     look_back = 20
 
-    df = (
-        du.load_daily_crsp(start_date, end_date)
-        .with_columns(pl.col("close").rolling_mean(window_size=look_back).alias("ma"))
-        .drop_nulls()
-        .sort(["permno", "date"])
+    df = du.load_daily_crsp(
+        start_date=start_date,
+        end_date=end_date,
+        look_back=look_back
     )
-    
+
     generate_images(df, ticker_col='permno', look_back=look_back, height=64)

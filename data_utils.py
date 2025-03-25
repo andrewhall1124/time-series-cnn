@@ -3,9 +3,7 @@
 import polars as pl
 from datetime import date
 from pathlib import Path
-from tqdm import tqdm
 import yfinance as yf
-import pandas as pd
 
 CRSP_FOLDER = Path("data/crsp_daily")
 CRSP_SCHEMA = {
@@ -183,29 +181,24 @@ def clean_raw_crsp_file(raw_file_path: str, clean_file_path: str) -> None:
     df.write_parquet(clean_file_path)
 
 
-def load_daily_crsp(start_date: date, end_date: date) -> pl.DataFrame:
+def load_daily_crsp(start_date: date, end_date: date, look_back: int) -> pl.LazyFrame:
     return (
-        pl.scan_parquet("data/crsp_daily.parquet")
-        # Filter to date range
+        pl.read_parquet("data/crsp_daily.parquet")
         .filter(pl.col("date").is_between(start_date, end_date))
-        # Lag variables
+        .filter(pl.col('prc').ge(5))
         .with_columns(
-            pl.col('openprc').shift(1).over('permno').alias('open'),
-            pl.col('askhi').shift(1).over('permno').alias('high'),
-            pl.col('bidlo').shift(1).over('permno').alias('low'),
-            pl.col('prc').shift(1).over('permno').alias('close'),
+            pl.col("ret").shift(1).fill_null(0).add(1).cum_prod().sub(1).over('permno').alias("cumret")
         )
-        # Create cummulative return column
-        .with_columns((1 + pl.col('ret')).cum_prod().over('permno').alias('cumret'))
-        # Scale pricing columns
-        .with_columns(pl.col(['open', 'high', 'low', 'close']).mul(pl.col('cumret')))
-        #Sort
-        .sort(["permno", "date"])
-        # Rename
-        .rename({'vol': 'volume', 'ret': 'return'})
-        # Select
-        .select(['date', 'permno', 'open', 'high', 'low', 'close', 'volume', 'return'])
-    ).collect()
+        .with_columns(pl.lit(1).mul(pl.col("cumret").add(1)).alias('close'))
+        .with_columns(
+            pl.col('openprc').truediv(pl.col('prc')).mul('close').alias('open'),
+            pl.col('askhi').truediv(pl.col('prc')).mul('close').alias('high'),
+            pl.col('bidlo').truediv(pl.col('prc')).mul('close').alias('low'),
+            pl.col('vol').alias('volume'),
+            pl.col("close").rolling_mean(window_size=look_back, min_samples=1).over('permno').alias("ma")
+        )
+        .select('date', 'permno', 'open', 'high', 'low', 'close', 'volume', 'ma')
+    )
 
 
 if __name__ == "__main__":
