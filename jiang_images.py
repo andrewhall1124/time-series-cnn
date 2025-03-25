@@ -288,4 +288,6 @@ if __name__ == "__main__":
         look_back=look_back
     )
 
+    # df = df.filter(pl.col('permno').eq(14593)).sort('date')
+
     generate_images(df, ticker_col='permno', look_back=look_back, height=64)
