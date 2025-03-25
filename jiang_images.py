@@ -220,7 +220,7 @@ def generate_images(
             leave=False,
             position=1,
         ):
-            image_folder = f"images/{look_back}/{end.strftime('%Y%m%d')}"
+            image_folder = f"images/{look_back}/{ticker}"
             image_path = (
                 f"{image_folder}/{ticker}_{end.strftime('%Y%m%d')}_{look_back}.png"
             )
