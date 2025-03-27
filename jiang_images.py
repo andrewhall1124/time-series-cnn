@@ -5,6 +5,7 @@ from datetime import date
 from tqdm import tqdm
 import numpy as np
 import os
+import zipfile
 
 pl.enable_string_cache()
 
@@ -192,68 +193,94 @@ def generate_volumes_bars(df: pl.DataFrame, n_days: int, n_bins: int) -> np.arra
 
 
 def generate_images(
-    df: pl.DataFrame, ticker_col: str, look_back: int = 20, height: int | None = None
+    df: pl.DataFrame, 
+    ticker_col: str, 
+    look_back: int = 20, 
+    height: int | None = None,
 ) -> None:
     width = look_back * 3
     height = height or width
     price_height = int(round(height * 0.8))
     volume_height = int(round(height * 0.2))
-
+    
     tickers = df[ticker_col].unique().sort()
     dates = df.select("date").unique().sort("date")
-    for ticker in tqdm(tickers, desc="Generating images...", position=0):
-        # Subset on ticker
-        ticker_df = df.filter(pl.col(ticker_col).eq(ticker))
 
-        # Get valid periods for ticker
-        ticker_start = ticker_df["date"].min()
-        ticker_end = ticker_df["date"].max()
-        ticker_dates = dates.filter(
-            pl.col("date").is_between(ticker_start, ticker_end)
-        ).sort("date")
-        ticker_periods = get_period_pairs(ticker_dates, look_back)
+    zip_filename = f"data/images_{look_back}.zip"
+    
+    # Create a zip file to store all images
+    with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        for ticker in tqdm(tickers, desc="Generating images...", position=0):
+            # Subset on ticker
+            ticker_df = df.filter(pl.col(ticker_col).eq(ticker))
+            
+            # Get valid periods for ticker
+            ticker_start = ticker_df["date"].min()
+            ticker_end = ticker_df["date"].max()
+            
+            ticker_dates = dates.filter(
+                pl.col("date").is_between(ticker_start, ticker_end)
+            ).sort("date")
+            
+            ticker_periods = get_period_pairs(ticker_dates, look_back)
+            
+            # Generate image for each day
+            for start, end in tqdm(
+                ticker_periods,
+                desc=f"Generating images for {ticker}",
+                leave=False,
+                position=1,
+            ):
+                # Create a temporary folder for image generation
+                temp_image_folder = f"temp_images/{look_back}/{ticker}"
+                os.makedirs(temp_image_folder, exist_ok=True)
+                
+                image_filename = f"{ticker}_{end.strftime('%Y%m%d')}_{look_back}.png"
+                image_path = os.path.join(temp_image_folder, image_filename)
+                
+                # Skip if image already exists in zip
+                if any(image_filename in zinfo.filename for zinfo in zipf.filelist):
+                    continue
+                
+                # Subset on period (ensure all dates)
+                period_df = ticker_df.filter(pl.col("date").is_between(start, end))
+                
+                if len(period_df) != look_back:
+                    continue
+                
+                # Generate image components
+                ohlc_bars = generate_ohlc_bars(period_df, look_back, price_height)
+                ma_line = generate_ma_line(period_df, look_back, price_height)
+                volume_bars = generate_volumes_bars(period_df, look_back, volume_height)
+                
+                # Take max of moving average line and ohlc bars
+                image = np.maximum(ohlc_bars, ma_line)
+                
+                # Stack on top of volume bars
+                image = np.vstack([image, volume_bars])
+                
+                # Put into RGB spaces
+                image = image * 255
+                assert image.shape == (height, width)
+                
+                # Save image
+                plt.imsave(
+                    image_path,
+                    image,
+                    cmap="grey",
+                )
+                
+                # Add image to zip file
+                zipf.write(image_path, arcname=image_filename)
+                
+                # Remove temporary image file
+                os.remove(image_path)
+        
+        # Remove temporary folders
+        os.rmdir(temp_image_folder)
+        os.rmdir(os.path.dirname(temp_image_folder))
 
-        # Generate image for each day
-        for start, end in tqdm(
-            ticker_periods,
-            desc=f"Generating images for {ticker}",
-            leave=False,
-            position=1,
-        ):
-            image_folder = f"images/{look_back}/{ticker}"
-            image_path = (
-                f"{image_folder}/{ticker}_{end.strftime('%Y%m%d')}_{look_back}.png"
-            )
-
-            if os.path.exists(image_path):
-                continue
-
-            # Subset on period (ensure all dates)
-            period_df = ticker_df.filter(pl.col("date").is_between(start, end))
-
-            if len(period_df) != look_back:
-                continue
-
-            # Generate image components
-            ohlc_bars = generate_ohlc_bars(period_df, look_back, price_height)
-            ma_line = generate_ma_line(period_df, look_back, price_height)
-            volume_bars = generate_volumes_bars(period_df, look_back, volume_height)
-
-            # Take max of moving average line and ohlc bars
-            image = np.maximum(ohlc_bars, ma_line)
-
-            # Stack on top of volume bars
-            image = np.vstack([image, volume_bars])
-
-            assert image.shape == (height, width)
-
-            # Save
-            os.makedirs(image_folder, exist_ok=True)
-            plt.imsave(
-                image_path,
-                image,
-                cmap="grey",
-            )
+    print(f"Images have been saved to {zip_filename}")
 
 
 def generate_yf_images():
@@ -289,5 +316,6 @@ if __name__ == "__main__":
     )
 
     # df = df.filter(pl.col('permno').eq(14593)).sort('date')
+    # df = df.filter(pl.col('permno').ge(86270)).sort(['permno', 'date'])
 
     generate_images(df, ticker_col='permno', look_back=look_back, height=64)
