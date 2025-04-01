@@ -27,11 +27,10 @@ class StockImagesDataset(Dataset):
 if __name__ == '__main__':
     dataset = StockImagesDataset(
         annotations_file='data/train_annotations_20.csv',
-        img_dir='images/20'
+        img_dir='/home/andrew/Data/images/20'
     )
-
-
-    image, label = dataset[0]
+    
+    image, label = dataset[-1]
     plt.title(f"Label: {label}")
     plt.xticks([])
     plt.yticks([])
