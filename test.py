@@ -7,9 +7,12 @@ import torch.nn.functional as F
 import polars as pl
 
 # ----- Parameters -----
-BATCH_SIZE = 128
+BATCH_SIZE = 1024
 NUM_WORKERS = 12
-NUM_EPOCHS = 1
+NUM_EPOCHS = 10
+
+# File paths
+MODEL_NAME = f"{NUM_EPOCHS}_epochs_model_2"
 
 # Dataset
 out_of_sample_dataset = StockImagesDataset(
@@ -27,15 +30,16 @@ print(f"Using device: {device}")
 
 # Model
 model = StockCNN()
-model.load_state_dict(torch.load("model.pth"))
+model.load_state_dict(torch.load(f"weights/{MODEL_NAME}.pth"))
 model.to(device)
 
 # Evaluation
 model.eval()
 
+# ----- Probability Results -----
 probabilities_list = []
 with torch.no_grad():  # Disable gradient calculation
-    for images, labels in tqdm(test_loader, desc="Testing"):
+    for images, labels in tqdm(test_loader, desc="Testing Probabilities"):
         images, labels = images.to(device), labels.to(device)
         
         outputs = model(images)
@@ -46,5 +50,6 @@ with torch.no_grad():  # Disable gradient calculation
 
 results = torch.concat(probabilities_list).view(-1).tolist()
 results = pl.Series("probability", results).to_frame()
+print(results)
 
-results.write_parquet("data/test_results.parquet")
+results.write_parquet(f"results/{MODEL_NAME}_test_results.parquet")

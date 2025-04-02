@@ -165,6 +165,14 @@ def load_daily_crsp(start_date: date, end_date: date, look_back: int) -> pl.Lazy
         .select('date', 'permno', 'open', 'high', 'low', 'close', 'volume', 'ma')
     )
 
+def load_daily_crsp_annotations(start_date: date, end_date: date) -> pl.LazyFrame:
+    return (
+        pl.read_parquet("data/crsp_daily.parquet")
+        .filter(pl.col("date").is_between(start_date, end_date))
+        .filter(pl.col('prc').ge(5))
+        .select('date', 'permno', 'ticker', 'prc', 'ret')
+    )
+
 
 if __name__ == "__main__":
     df = load_daily_crsp(start_date=date(2010, 3, 5), end_date=date(2019, 12, 31))

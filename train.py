@@ -8,13 +8,13 @@ from model import StockCNN
 import polars as pl
 
 # ----- Parameters -----
-BATCH_SIZE = 128
+BATCH_SIZE = 1024
 NUM_WORKERS = 12
 VALIDATION_SPLIT = .8
-NUM_EPOCHS = 1
+NUM_EPOCHS = 10
 
 # File paths
-MODEL_NAME = "model_1"
+MODEL_NAME = f"{NUM_EPOCHS}_epochs_model_2"
 
 # Load dataset
 in_sample_dataset = StockImagesDataset(
@@ -39,7 +39,7 @@ model = StockCNN().to(device)
 
 # Loss function & Optimizer
 criterion = nn.BCEWithLogitsLoss()
-optimizer = optim.Adam(model.parameters(), lr=1e-8)
+optimizer = optim.Adam(model.parameters(), lr=1e-4)
 
 def validation() -> float:
     model.eval()

@@ -3,9 +3,11 @@ import polars as pl
 import data_utils as du
 from datetime import date
 
+image_folder = "/home/andrew/Data/images/20"
+
 # Get file paths
-permnos = os.listdir("images/20")
-file_paths = [file for permno in permnos for file in os.listdir(f"images/20/{permno}")]
+permnos = os.listdir(image_folder)
+file_paths = [file for permno in permnos for file in os.listdir(f"{image_folder}/{permno}")]
 file_paths_df = (
     pl.DataFrame(file_paths, schema={"file_path": pl.String})
     # Seperate columns
@@ -29,12 +31,11 @@ test_end_date = date(2019, 12, 31)
 look_back = 20
 
 df = (
-    du.load_daily_crsp(
-        start_date=train_start_date, end_date=test_end_date, look_back=look_back
+    du.load_daily_crsp_annotations(
+        start_date=train_start_date, end_date=test_end_date
     )
     .with_columns(
-        pl.col("close")
-        .pct_change()
+        pl.col("ret")
         .log1p()
         .rolling_sum(window_size=look_back)
         .shift(-look_back)
@@ -46,7 +47,7 @@ df = (
         pl.when(pl.col(f"return_{look_back}").ge(0)).then(1).otherwise(0).alias("label")
     )
     .sort(['permno', 'date'])
-    .select('date', 'permno', f'return_{look_back}', 'label')
+    .select('date', 'permno', 'ticker', 'prc', 'ret', f'return_{look_back}', 'label')
 )
 
 print(df)
@@ -89,3 +90,12 @@ test_annotations = (
 )
 print(test_annotations)
 test_annotations.write_csv("data/test_annotations_20.csv")
+
+backtest_df = (
+    annotations
+    .filter(pl.col('date').is_between(test_start_date, test_end_date))
+    .sort(['permno', 'date'])
+)
+
+print(backtest_df)
+backtest_df.write_parquet("data/backtest_starter.parquet")
