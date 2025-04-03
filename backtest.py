@@ -3,7 +3,7 @@ import numpy as np
 import polars_ds as pds
 import polars.selectors as cs
 
-MODEL_NAME = '10_epochs_model_1'
+MODEL_NAME = '24_epochs_model_1'
 
 cnn_data = (
     pl.scan_csv("data/test_annotations_20.csv")
@@ -111,5 +111,5 @@ plt.ylabel("Cummulative Sum Return (%)")
 
 plt.legend()
 
-plt.savefig(f"results/{MODEL_NAME}backtest_plot.png", dpi=300)
+plt.savefig(f"results/{MODEL_NAME}_backtest_plot.png", dpi=300)
 

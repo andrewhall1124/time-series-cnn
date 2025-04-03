@@ -11,10 +11,10 @@ import polars as pl
 BATCH_SIZE = 1024
 NUM_WORKERS = 12
 VALIDATION_SPLIT = .8
-NUM_EPOCHS = 10
+NUM_EPOCHS = 24
 
 # File paths
-MODEL_NAME = f"{NUM_EPOCHS}_epochs_model_2"
+MODEL_NAME = f"{NUM_EPOCHS}_epochs_model_1"
 
 # Load dataset
 in_sample_dataset = StockImagesDataset(
