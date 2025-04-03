@@ -3,7 +3,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 
 
-MODEL_NAME = '24_epochs_model_1'
+MODEL_NAME = "10_0.001_epochs_model_1"
 
 data = (
     pl.read_parquet(f"results/{MODEL_NAME}_training_data.parquet")

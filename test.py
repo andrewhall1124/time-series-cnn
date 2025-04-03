@@ -9,10 +9,9 @@ import polars as pl
 # ----- Parameters -----
 BATCH_SIZE = 1024
 NUM_WORKERS = 12
-NUM_EPOCHS = 10
 
 # File paths
-MODEL_NAME = f"{NUM_EPOCHS}_epochs_model_2"
+MODEL_NAME = "10_0.001_epochs_model_1"
 
 # Dataset
 out_of_sample_dataset = StockImagesDataset(

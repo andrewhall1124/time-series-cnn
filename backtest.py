@@ -3,7 +3,7 @@ import numpy as np
 import polars_ds as pds
 import polars.selectors as cs
 
-MODEL_NAME = '24_epochs_model_1'
+MODEL_NAME = "10_0.001_epochs_model_1"
 
 cnn_data = (
     pl.scan_csv("data/test_annotations_20.csv")
