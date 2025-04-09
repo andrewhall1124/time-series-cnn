@@ -11,7 +11,7 @@ BATCH_SIZE = 1024
 NUM_WORKERS = 12
 
 # File paths
-MODEL_NAME = "10_0.001_epochs_model_1"
+MODEL_NAME = "100_0.001_epochs_model_1"
 
 # Dataset
 out_of_sample_dataset = StockImagesDataset(
