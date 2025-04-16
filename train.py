@@ -9,24 +9,26 @@ import polars as pl
 import os
 from torch.utils.data import random_split
 
-torch.manual_seed(42)
-
 # ----- Parameters -----
 BATCH_SIZE = 1024
 NUM_WORKERS = 12
 VALIDATION_SPLIT = .8
 NUM_EPOCHS = 25
 LEARNING_RATE = 1e-5
+SEED = 3
 
 # Early stopping parameters
 PATIENCE = 2
 
 # Train-validation split
-SHUFFLE_IN_SAMPLE_DATASET = True
+SHUFFLE_IN_SAMPLE_DATASET = False
 SHUFFLE_DATA_LOADER = False
 
+torch.manual_seed(SEED)
+
 # File paths
-MODEL_NAME = f"{LEARNING_RATE}_1"
+shuffle_str = 'shuffle' if SHUFFLE_IN_SAMPLE_DATASET else 'no_shuffle'
+MODEL_NAME = f"{LEARNING_RATE}_{SEED}_{shuffle_str}"
 os.makedirs(f"weights/{MODEL_NAME}", exist_ok=True)
 
 # Load dataset

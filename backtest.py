@@ -3,7 +3,7 @@ import numpy as np
 import polars_ds as pds
 import polars.selectors as cs
 
-MODEL_NAME = "100_0.001_epochs_model_1"
+MODEL_NAME = "1e-05_3_no_shuffle"
 
 cnn_data = (
     pl.scan_csv("data/test_annotations_20.csv")

@@ -11,7 +11,7 @@ BATCH_SIZE = 1024
 NUM_WORKERS = 12
 
 # File paths
-MODEL_NAME = "100_0.001_epochs_model_1"
+MODEL_NAME = "1e-05_3_no_shuffle"
 
 # Dataset
 out_of_sample_dataset = StockImagesDataset(
@@ -29,7 +29,7 @@ print(f"Using device: {device}")
 
 # Model
 model = StockCNN()
-model.load_state_dict(torch.load(f"weights/{MODEL_NAME}.pth"))
+model.load_state_dict(torch.load(f"weights/{MODEL_NAME}/{MODEL_NAME}_epoch_best.pth"))
 model.to(device)
 
 # Evaluation
