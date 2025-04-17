@@ -21,23 +21,6 @@ def with_labels(full_df):
     )
 
 
-indicators = [
-    "rsi",
-    "william",
-    "macd",
-    "ppo",
-    "roc",
-    "cmo",
-    "sma",
-    "ema",
-    "wma",
-    "tema",
-    "cci",
-    "dmi",
-    "psar",
-]
-
-
 def transform(full_df):
     to_merge = []
     for ticker in full_df["ticker"].unique():
@@ -109,11 +92,13 @@ def transform(full_df):
             )
             new_cols.append(talib.SAR(df["high"], df["low"]).rename(f"psar_{period}"))
 
-            numerical_cols = pl.col(pl.Float64, pl.Int64)
-            df = df.with_columns(*new_cols).with_columns(
-                (numerical_cols - numerical_cols.min())
-                / (numerical_cols.max() - numerical_cols.min())
-            )
+            df = df.with_columns(*new_cols)
+
+        numerical_cols = pl.col(pl.Float64, pl.Int64)
+        df = df.with_columns(
+            (numerical_cols - numerical_cols.rolling_min(56))
+            / (numerical_cols.rolling_max(56) - numerical_cols.rolling_min(56))
+        )
 
         to_merge.append(df.drop_nans())
     return pl.concat(to_merge)
