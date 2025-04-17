@@ -17,11 +17,17 @@ from indicators import transform, with_labels
 import polars as pl
 import os
 
+# Set random seed for reproducibility
+torch.manual_seed(42)
+np.random.seed(42)
 
-def select_features(X, y, n_features=225):
+IM_DIM = 15
+
+
+def select_features(X, y):
     # Combine F-score and mutual information for feature selection, as per paper
     selector = SelectKBest(
-        lambda X, y: f_classif(X, y)[0] + mutual_info_classif(X, y), k=n_features
+        lambda X, y: f_classif(X, y)[0] + mutual_info_classif(X, y), k=IM_DIM**2
     )
     selector.fit(X, y)
     return selector.get_feature_names_out()
@@ -79,8 +85,8 @@ def generate_datasets(data_path="data/wmt_data.parquet.gz"):
     X_test = X_test[best_features]
 
     # Reshape to 2D images
-    X_train = X_train.to_numpy().reshape(-1, 1, 15, 15)
-    X_test = X_test.to_numpy().reshape(-1, 1, 15, 15)
+    X_train = X_train.to_numpy().reshape(-1, 1, IM_DIM, IM_DIM)
+    X_test = X_test.to_numpy().reshape(-1, 1, IM_DIM, IM_DIM)
 
     # Create datasets
     train = torch.utils.data.TensorDataset(
@@ -95,25 +101,27 @@ def generate_datasets(data_path="data/wmt_data.parquet.gz"):
 
 
 def get_model():
+    # After Conv1: (IM_DIM - 2 + 1) = IM_DIM - 1
+    # After Conv2: floor((IM_DIM - 1 - 2) / 2 + 1) = (IM_DIM - 1) // 2
+    final_dim = (IM_DIM - 1) // 2
     return nn.Sequential(
         # Conv 1
-        # In: 15x15x1
-        nn.Conv2d(1, 25, 2),
+        # In: IM_DIM x IM_DIM x 1
+        nn.Conv2d(1, 25, kernel_size=2),
         nn.ReLU(),
         nn.BatchNorm2d(25),
         # Conv 2
-        # In: 14x14x25
-        nn.Conv2d(25, 12, 2, stride=2),
+        # In: (IM_DIM - 1) x (IM_DIM - 1) x 25
+        nn.Conv2d(25, 12, kernel_size=2, stride=2),
         nn.ReLU(),
         nn.BatchNorm2d(12),
-        # Linear 1
-        # In: 7x7x12
+        # Linear layers
+        # In: final flattened features = 12 * final_dim * final_dim
         nn.Flatten(),
-        nn.Linear(7 * 7 * 12, 100),
+        nn.Linear(12 * final_dim * final_dim, 100),
         nn.ReLU(),
         nn.BatchNorm1d(100),
-        # Final Linear
-        # In: 100
+        # Final output layer
         nn.Linear(100, 3),
     )
 
@@ -123,8 +131,8 @@ def train(
     val,
     device,
     max_epochs=3000,
-    bs=256,
-    lr=5e-3,
+    bs=128,
+    lr=1e-4,
     warmup=0,
     patience=1,
     **model_params,
@@ -144,8 +152,7 @@ def train(
 
     train_losses = np.zeros(max_epochs)
     val_losses = np.zeros(max_epochs)
-    best_model = None
-    best_val_loss = None
+    best_model, best_val_loss = (None, None)
     for epoch in tqdm(range(max_epochs)):
         model.train()
         losses = []

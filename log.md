@@ -9,6 +9,7 @@
   - Batch size
   - Optimizer
   - Normalization time range
+- Add embed for security
 - Better loss function
   - https://www.perplexity.ai/search/what-are-best-practices-for-us-zAPeQaGbTLOf5AF8L.Zkxg
 - RL?
@@ -16,10 +17,41 @@
 
 # General Notes
 
-- Walmart Buy-and-Hold gets .82 sharpe
-- Theoretical optimal Walmart gets 8.64 sharpe
+- Walmart
+  - Buy-and-Hold gets .82 sharpe
+  - Theoretical optimal gets 8.64 sharpe
+  - SVC baseline gets .83 sharpe
+  - HistGradientBoostingClassifier gets .44 sharpe
 
 # Training Log
+
+## Fixed Param Tuning on 53e5ac2d3618fe83f0b516f83a044d8196930976
+
+After the prior param tuning, I realized I failed to set the seed, which makes my results non-deterministic. I fixed that, and re-ran a lot of param tuning.
+
+- Batch Size
+  - 256 => .61 sharpe
+  - 128 => .85 sharpe
+- Warmup
+  - 0 => .85 sharpe
+  - 10 => .63 sharpe
+  - 100 => .43 sharpe
+- LR
+  - 5e-3 => .85 sharpe
+  - 1e-3 => .85 sharpe
+  - 5e-4 => .87 sharpe
+  - 1e-4 => .94 sharpe
+  - 5e-5 => .48 sharpe
+- Architecture
+  - Padding to keep sizes => .64 sharpe
+  - 16x16 images with modifications => .44 sharpe
+  - 14x14 => .5 sharpe
+  - 20x20 => .45 sharpe
+  - Extra Linear Layer => .57 sharpe
+- Feature Selection
+  - Both => .94 sharpe
+  - Only F classif => .94 sharpe
+  - Only Mutual Info => .62 sharpe
 
 ## Some Param Tuning on 5326e53a0653aa1ac07a2d11097dd0faeab3ab29
 
@@ -28,7 +60,7 @@
   - 256 => .64 sharpe
   - 512 => .57 sharpe
 - Warmup
-  - 0.00 => .65 sharpe
+  - 0 => .65 sharpe
 - Patience
   - 5 => .73 sharpe
   - 1 => .76 sharpe
