@@ -20,6 +20,7 @@ dependencies = [
     "tqdm>=4.67.1",
     "wrds>=3.3.0",
     "yfinance>=0.2.54",
+    "ta-lib>=0.6.3",
 ]
 
 [dependency-groups]

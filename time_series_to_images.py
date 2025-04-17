@@ -67,6 +67,11 @@ def generate_datasets(data_path="data/wmt_data.parquet.gz"):
     y_train = y[:train_size]
     y_test = y[train_size:]
 
+    # Save original close prices for backtesting
+    test_prices = X_test["original_close"].to_numpy()
+    X_train = X_train.drop("original_close")
+    X_test = X_test.drop("original_close")
+
     # Feature selection
     best_features = select_features(X_train, y_train)
     X_train = X_train[best_features]
@@ -85,7 +90,7 @@ def generate_datasets(data_path="data/wmt_data.parquet.gz"):
         torch.tensor(X_test, dtype=torch.float32),
         torch.tensor(y_test.to_numpy(), dtype=torch.long),
     )
-    return train, test
+    return train, test, test_prices
 
 
 def get_model(dropout=0.15):
@@ -172,10 +177,48 @@ def train(
     return model, train_losses[:epoch], val_losses[:epoch]
 
 
-LOAD_MODEL = False
+def backtest(price_history, decisions, initial_money=10_000, trading_days=251):
+    """
+    Simple backtest returning annualized return and Sharpe ratio
+    (assumes zero risk‑free rate).
+    """
+    money = initial_money
+    shares = 0.0
+    values = []
+
+    for price, decision in zip(price_history, decisions):
+        if decision == 0:  # Buy
+            shares += money / price
+            money = 0.0
+        elif decision == 1:  # Sell
+            money += shares * price
+            shares = 0.0
+        values.append(money + shares * price)
+
+    values = np.array(values)
+    T = len(values)
+
+    # Plot value
+    plt.plot(values)
+    plt.title("Portfolio Value")
+    plt.xlabel("Day")
+    plt.ylabel("Value ($)")
+    plt.show()
+
+    # Annualized return
+    ann_return = (values[-1] / initial_money) ** (trading_days / T) - 1
+
+    # Daily returns and Sharpe (zero RF)
+    daily_rets = values[1:] / values[:-1] - 1
+    sharpe = daily_rets.mean() / daily_rets.std(ddof=1) * np.sqrt(trading_days)
+
+    return ann_return, sharpe
+
+
+LOAD_MODEL = True
 if __name__ == "__main__":
     # Generate datasets
-    train_data, val_data = generate_datasets()
+    train_data, val_data, backtest_prices = generate_datasets()
 
     device = None
     if torch.backends.mps.is_available():
@@ -222,5 +265,6 @@ if __name__ == "__main__":
     print("Confusion matrix:")
     print(confusion_matrix(y_true, y_pred))
 
-
-# .67 with 56 day normalization
+    ret, sharpe = backtest(backtest_prices, y_true)
+    print(f"Annualized return: {ret:.2%}")
+    print(f"Sharpe ratio: {sharpe:.2f}")

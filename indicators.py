@@ -95,10 +95,13 @@ def transform(full_df):
             df = df.with_columns(*new_cols)
 
         numerical_cols = pl.col(pl.Float64, pl.Int64)
+        original_close = df["close"]
         df = df.with_columns(
             (numerical_cols - numerical_cols.rolling_min(56))
             / (numerical_cols.rolling_max(56) - numerical_cols.rolling_min(56))
         )
+        # Save original close price for backtesting
+        df = df.with_columns(original_close.rename("original_close"))
 
         to_merge.append(df.drop_nans())
     return pl.concat(to_merge)

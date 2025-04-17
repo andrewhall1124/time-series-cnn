@@ -1553,6 +1553,16 @@ wheels = [
 ]
 
 [[package]]
+name = "ta-lib"
+version = "0.6.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+    { name = "setuptools" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/35/dc/e7fab66315fdd2e2eeb2e3dbb9d23ea615bafc1e9174a8965d310e40a3c2/ta_lib-0.6.3.tar.gz", hash = "sha256:0c628db09b3fab6e5c26979e608b674e7aecc10359c82ba8d53f729767a856ac", size = 376798 }
+
+[[package]]
 name = "threadpoolctl"
 version = "3.6.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1575,6 +1585,7 @@ dependencies = [
     { name = "pyarrow" },
     { name = "scikit-learn" },
     { name = "seaborn" },
+    { name = "ta-lib" },
     { name = "torch" },
     { name = "torchvision" },
     { name = "torchviz" },
@@ -1600,6 +1611,7 @@ requires-dist = [
     { name = "pyarrow", specifier = ">=19.0.1" },
     { name = "scikit-learn", specifier = ">=1.6.1" },
     { name = "seaborn", specifier = ">=0.13.2" },
+    { name = "ta-lib", specifier = ">=0.6.3" },
     { name = "torch", specifier = ">=2.6.0" },
     { name = "torchvision", specifier = ">=0.21.0" },
     { name = "torchviz", specifier = ">=0.0.3" },
