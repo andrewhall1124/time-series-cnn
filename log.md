@@ -9,6 +9,10 @@
   - Batch size
   - Optimizer
   - Normalization time range
+- Better loss function
+  - https://www.perplexity.ai/search/what-are-best-practices-for-us-zAPeQaGbTLOf5AF8L.Zkxg
+- RL?
+  - https://spinningup.openai.com/en/latest/algorithms/td3.html
 
 # General Notes
 
@@ -21,6 +25,8 @@
 
 - Date: April 17, 2025
 - .55 Sharpe with 250 day norm window
+
+## Full 
 
 ## First Paper Replication
 

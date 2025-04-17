@@ -21,6 +21,8 @@ dependencies = [
     "wrds>=3.3.0",
     "yfinance>=0.2.54",
     "ta-lib>=0.6.3",
+    "stock-indicators>=1.3.4",
+    "ta>=0.11.0",
 ]
 
 [dependency-groups]

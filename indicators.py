@@ -1,5 +1,6 @@
 import talib
 import polars as pl
+import ta
 
 
 LABEL_WINDOW = 11
@@ -66,16 +67,16 @@ def transform(full_df):
             new_cols.append(
                 talib.ROC(df["close"], timeperiod=period).rename(f"roc_{period}")
             )
-            # mfv = (
-            #     ((df["close"] - df["low"]) - (df["high"] - df["close"]))
-            #     / (df["high"] - df["low"])
-            # ) * df["volume"]
-            # new_cols.append(
-            #     (
-            #         mfv.rolling_sum(window_size=period)
-            #         / df["volume"].rolling_sum(window_size=period)
-            #     ).rename(f"cmfi_{period}")
-            # )
+            mfv = (
+                ((df["close"] - df["low"]) - (df["high"] - df["close"]))
+                / (df["high"] - df["low"])
+            ) * df["volume"]
+            new_cols.append(
+                (
+                    mfv.rolling_sum(window_size=period)
+                    / df["volume"].rolling_sum(window_size=period)
+                ).rename(f"cmfi_{period}")
+            )
             new_cols.append(
                 talib.CMO(df["close"], timeperiod=period).rename(f"cmo_{period}")
             )
@@ -88,10 +89,13 @@ def transform(full_df):
             new_cols.append(
                 talib.WMA(df["close"], timeperiod=period).rename(f"wma_{period}")
             )
-            # # TODO: hma
-            # new_cols.append(
-            #     2 * talib.WMA(df['close'], timeperiod=period // 2)
-            # )
+            new_cols.append(
+                talib.WMA(
+                    2 * talib.WMA(df["close"], timeperiod=period // 2)
+                    - talib.WMA(df["close"], timeperiod=period),
+                    timeperiod=round(period**0.5),
+                ).rename(f"hma_{period}")
+            )
             new_cols.append(
                 talib.TEMA(df["close"], timeperiod=period).rename(f"tema_{period}")
             )
@@ -100,9 +104,32 @@ def transform(full_df):
                     f"cci_{period}"
                 )
             )
-            # TODO: dpo
-            # TODO: kst
-            # TODO: eom
+            new_cols.append(
+                pl.from_pandas(
+                    ta.trend.dpo(df["close"].to_pandas(), window=period)
+                ).rename(f"dpo_{period}")
+            )
+            new_cols.append(
+                pl.from_pandas(
+                    ta.trend.kst(
+                        df["close"].to_pandas(),
+                        window1=period,
+                        window2=period,
+                        window3=period,
+                        window4=round(period * 1.5),
+                    )
+                ).rename(f"kst_{period}")
+            )
+            new_cols.append(
+                pl.from_pandas(
+                    ta.volume.EaseOfMovementIndicator(
+                        df["high"].to_pandas(),
+                        df["low"].to_pandas(),
+                        df["volume"].to_pandas(),
+                        window=period,
+                    ).ease_of_movement()
+                ).rename(f"eom_{period}")
+            )
             # TODO: ibr
             new_cols.append(
                 talib.DX(df["high"], df["low"], df["close"], timeperiod=period).rename(

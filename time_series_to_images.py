@@ -74,6 +74,7 @@ def generate_datasets(data_path="data/wmt_data.parquet.gz"):
 
     # Feature selection
     best_features = select_features(X_train, y_train)
+    print("FEATURES", best_features)
     X_train = X_train[best_features]
     X_test = X_test[best_features]
 
