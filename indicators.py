@@ -2,12 +2,19 @@ import talib
 import polars as pl
 
 
+LABEL_WINDOW = 11
+MAX_PERIOD = 28
+NORM_WINDOW = 56
+
+
 def with_labels(full_df):
     return (
-        full_df.with_columns(pl.col("close").shift(5).alias("rolling_mid"))
+        full_df.with_columns(
+            pl.col("close").shift(LABEL_WINDOW // 2).alias("rolling_mid")
+        )
         .with_columns(
-            pl.col("close").rolling_max(window_size=11).alias("rolling_max"),
-            pl.col("close").rolling_min(window_size=11).alias("rolling_min"),
+            pl.col("close").rolling_max(window_size=LABEL_WINDOW).alias("rolling_max"),
+            pl.col("close").rolling_min(window_size=LABEL_WINDOW).alias("rolling_min"),
         )
         .with_columns(
             pl.when(pl.col("rolling_mid").eq(pl.col("rolling_max")))
@@ -25,7 +32,7 @@ def transform(full_df):
     to_merge = []
     for ticker in full_df["ticker"].unique():
         df = full_df.filter(pl.col("ticker") == ticker).sort("date")
-        for period in range(6, 28):
+        for period in range(6, MAX_PERIOD):
             new_cols = []
             new_cols.append(
                 talib.RSI(df["close"], timeperiod=period).rename(f"rsi_{period}")
@@ -59,7 +66,16 @@ def transform(full_df):
             new_cols.append(
                 talib.ROC(df["close"], timeperiod=period).rename(f"roc_{period}")
             )
-            # TODO: cmfi
+            # mfv = (
+            #     ((df["close"] - df["low"]) - (df["high"] - df["close"]))
+            #     / (df["high"] - df["low"])
+            # ) * df["volume"]
+            # new_cols.append(
+            #     (
+            #         mfv.rolling_sum(window_size=period)
+            #         / df["volume"].rolling_sum(window_size=period)
+            #     ).rename(f"cmfi_{period}")
+            # )
             new_cols.append(
                 talib.CMO(df["close"], timeperiod=period).rename(f"cmo_{period}")
             )
@@ -72,7 +88,10 @@ def transform(full_df):
             new_cols.append(
                 talib.WMA(df["close"], timeperiod=period).rename(f"wma_{period}")
             )
-            # TODO: hma
+            # # TODO: hma
+            # new_cols.append(
+            #     2 * talib.WMA(df['close'], timeperiod=period // 2)
+            # )
             new_cols.append(
                 talib.TEMA(df["close"], timeperiod=period).rename(f"tema_{period}")
             )
@@ -97,8 +116,11 @@ def transform(full_df):
         numerical_cols = pl.col(pl.Float64, pl.Int64)
         original_close = df["close"]
         df = df.with_columns(
-            (numerical_cols - numerical_cols.rolling_min(56))
-            / (numerical_cols.rolling_max(56) - numerical_cols.rolling_min(56))
+            (numerical_cols - numerical_cols.rolling_min(NORM_WINDOW))
+            / (
+                numerical_cols.rolling_max(NORM_WINDOW)
+                - numerical_cols.rolling_min(NORM_WINDOW)
+            )
         )
         # Save original close price for backtesting
         df = df.with_columns(original_close.rename("original_close"))

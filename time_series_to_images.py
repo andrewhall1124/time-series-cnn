@@ -118,14 +118,14 @@ def get_model(dropout=0.15):
 
 
 def train(
-    train, val, device, max_epochs=3000, bs=64, lr=0.001, warmup=0.1, **model_params
+    train, val, device, max_epochs=3000, bs=64, lr=0.001, warmup=0.01, **model_params
 ):
     train_loader = DataLoader(
         train,
         batch_size=bs,
         sampler=get_sampler(train.tensors[1].numpy()),
     )
-    val_loader = DataLoader(val, batch_size=256, shuffle=False)
+    val_loader = DataLoader(val, batch_size=4096, shuffle=False)
 
     model = get_model(**model_params).to(device)
 
@@ -163,10 +163,11 @@ def train(
             val_loss /= len(val_loader)
             scheduler.step(val_loss)
 
-            train_losses[epoch] = np.mean(losses)
+            train_loss = np.mean(losses)
+            train_losses[epoch] = train_loss
             val_losses[epoch] = val_loss
             if epoch % 100 == 0:
-                print(f"Epoch {epoch}: train loss {loss.item()}, val loss {val_loss}")
+                print(f"Epoch {epoch}: train loss {train_loss}, val loss {val_loss}")
 
             if epoch > warmup * max_epochs and val_loss > np.mean(
                 val_losses[epoch - 10 : epoch]
@@ -215,7 +216,7 @@ def backtest(price_history, decisions, initial_money=10_000, trading_days=251):
     return ann_return, sharpe
 
 
-LOAD_MODEL = True
+LOAD_MODEL = False
 if __name__ == "__main__":
     # Generate datasets
     train_data, val_data, backtest_prices = generate_datasets()
@@ -265,6 +266,6 @@ if __name__ == "__main__":
     print("Confusion matrix:")
     print(confusion_matrix(y_true, y_pred))
 
-    ret, sharpe = backtest(backtest_prices, y_true)
+    ret, sharpe = backtest(backtest_prices, y_pred)
     print(f"Annualized return: {ret:.2%}")
     print(f"Sharpe ratio: {sharpe:.2f}")
