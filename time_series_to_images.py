@@ -94,24 +94,24 @@ def generate_datasets(data_path="data/wmt_data.parquet.gz"):
     return train, test, test_prices
 
 
-def get_model(dropout=0.15):
+def get_model():
     return nn.Sequential(
         # Conv 1
         # In: 15x15x1
         nn.Conv2d(1, 25, 2),
         nn.ReLU(),
-        nn.Dropout(dropout),
+        nn.BatchNorm2d(25),
         # Conv 2
         # In: 14x14x25
         nn.Conv2d(25, 12, 2, stride=2),
         nn.ReLU(),
-        nn.Dropout(dropout),
+        nn.BatchNorm2d(12),
         # Linear 1
         # In: 7x7x12
         nn.Flatten(),
         nn.Linear(7 * 7 * 12, 100),
         nn.ReLU(),
-        nn.Dropout(dropout),
+        nn.BatchNorm1d(100),
         # Final Linear
         # In: 100
         nn.Linear(100, 3),
@@ -119,7 +119,15 @@ def get_model(dropout=0.15):
 
 
 def train(
-    train, val, device, max_epochs=3000, bs=64, lr=0.001, warmup=0.01, **model_params
+    train,
+    val,
+    device,
+    max_epochs=3000,
+    bs=256,
+    lr=5e-3,
+    warmup=0,
+    patience=1,
+    **model_params,
 ):
     train_loader = DataLoader(
         train,
@@ -136,6 +144,8 @@ def train(
 
     train_losses = np.zeros(max_epochs)
     val_losses = np.zeros(max_epochs)
+    best_model = None
+    best_val_loss = None
     for epoch in tqdm(range(max_epochs)):
         model.train()
         losses = []
@@ -170,11 +180,20 @@ def train(
             if epoch % 100 == 0:
                 print(f"Epoch {epoch}: train loss {train_loss}, val loss {val_loss}")
 
-            if epoch > warmup * max_epochs and val_loss > np.mean(
-                val_losses[epoch - 10 : epoch]
-            ):
-                print("Early stopping")
-                break
+            if best_val_loss is None or val_loss < best_val_loss:
+                best_val_loss = val_loss
+                best_model = model.state_dict()
+
+            # Early stopping
+            if epoch >= patience and epoch > warmup:
+                # Check if validation loss hasn't improved for 'patience' epochs
+                if val_loss >= min(val_losses[max(0, epoch - patience) : epoch]):
+                    print(
+                        f"Early stopping at epoch {epoch}. No improvement for {patience} epochs."
+                    )
+                    break
+    # Load best model
+    model.load_state_dict(best_model)
 
     return model, train_losses[:epoch], val_losses[:epoch]
 
