@@ -15,3 +15,13 @@ reading/
 
 # MacOS
 .DS_Store
+images
+images_bad
+*.pth
+*.log
+
+# Folders
+/weights
+/results
+/logs
+/archive
