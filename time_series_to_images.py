@@ -69,7 +69,7 @@ def generate_datasets(data_path="data/sp_sample.parquet.gz"):
                 "CMS",
                 "KO",
             ],
-            start_date="2010-01-01",
+            start_date="2009-01-01",
         )
         df = transform(df)
         df.write_parquet(data_path, compression="gzip")

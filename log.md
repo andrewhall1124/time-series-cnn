@@ -25,7 +25,13 @@
 
 # Training Log
 
-## Adding additional
+## More Tuning
+
+- Norm over 365 days doubled returns
+- 3 day label window bumps sharpe up to .62, baseline sharpe up to .82
+- 56 max period bumps sharpe up to .94
+
+## Adding additional tickers
 
 - Added both Walmart and Apple starting in the 80s...Sharpe was really bad, negative returns. Testing period was 2016-2024
 - Starting in 2010 was better, got .78 sharpe.

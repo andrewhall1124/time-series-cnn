@@ -3,9 +3,9 @@ import polars as pl
 import ta
 
 
-LABEL_WINDOW = 11
-MAX_PERIOD = 28
-NORM_WINDOW = 56
+LABEL_WINDOW = 3
+MAX_PERIOD = 56
+NORM_WINDOW = 365
 
 
 def with_labels(df):
