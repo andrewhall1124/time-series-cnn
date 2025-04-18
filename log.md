@@ -24,6 +24,48 @@
 
 # Training Log
 
+## Tuning on b341e03b118fa7f051ea929201ba53ec5ef5f3e9 (continuous labels)
+
+All values are NLL, MSE. NLL is most important. MSE is more for the sanity check. For some reason they sometimes diverge significantly.
+
+- Warmup:
+  - 10 => 60.9439, 0.1523
+  - 0 => 290.61, 74.989
+- LR:
+  - 1e-4 => 60.9439, 0.1523
+  - 1e-3 => 10.8192, 0.0355
+  - 1e-2 => 3.6157, 50.4576
+  - 1e-1 => 5.2406, 9697.4271
+  - 5e-4 => 11.6615, 0.05
+  - 3e-3 => 18.5814, 0.7245
+  - 5e-3 => 1.7110, 0.0618
+- Batch Size
+  - 64 => 2.6481, 4.6501
+  - 256 => 3.8508, 0.1218
+  - 128 => 1.7110, 0.0618
+- Warmup (round 2)
+  - 10 => 1.7110, 0.0618
+  - 150 => 1.7798, 0.0733
+  - 30 => 1.7409, 0.0752
+- Hidden Size
+  - 100 => 1.7409, 0.0752
+  - 1000 => 266.1348, 215.2613
+  - 10 => 0.4957, 0.0008
+  - 5 => 0.0895, 0.0116
+  - 10 (with only one linear layer) => 0.7690, 0.2526
+
+NOTE: At this point I realized there was an issue with my model saving code that caused it to not actually use the best model after overtraining.
+
+- Hidden Size (only one linear layer)
+  - 5 => -0.9570, 0.0509
+  - 100 => 2.4282, 25.3218
+- MISC:
+  - Predict log var => -3.6562, 0.0002
+- N Channels:
+  - (25, 12) => -3.6562, 0.0002
+  - (15, 8) => -3.6565, 0.0002
+  - (50, 25) => -3.6448, 0.0002
+
 ## More Tuning
 
 - Norm over 365 days doubled returns
@@ -60,6 +102,7 @@ Buy+Hold baseline Sharpe ratio: 0.47
 True baseline annualized return: 1.71%
 True baseline Sharpe ratio: 0.25
 ```
+
 Model is doing what it can, but I think we're hitting limitations of data/loss function
 
 ## Fixed Param Tuning on 53e5ac2d3618fe83f0b516f83a044d8196930976

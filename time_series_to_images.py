@@ -6,6 +6,7 @@ from tqdm import tqdm
 import numpy as np
 from sklearn.feature_selection import SelectKBest, f_classif
 import torch.nn.functional as F
+from copy import deepcopy
 
 import matplotlib.pyplot as plt
 from data_utils import load_yfinance
@@ -92,16 +93,17 @@ class GaussianOutputLayer(nn.Module):
     def __init__(self, in_features):
         super(GaussianOutputLayer, self).__init__()
         self.mu = nn.Linear(in_features, 1)
-        self.std = nn.Linear(in_features, 1)
+        self.log_var = nn.Linear(in_features, 1)
 
     def forward(self, x):
         mu = self.mu(x) + 1
-        std = self.std(x)
-        return mu, std**2
+        log_var = self.log_var(x)
+        var = torch.exp(log_var)
+        return mu, var
 
 
 def get_model(
-    hidden_size=100,
+    hidden_size=5,
     n_channels=(25, 12),
     activation=nn.ReLU,
 ):
@@ -125,11 +127,8 @@ def get_model(
         nn.Linear(n_channels[1] * final_dim * final_dim, hidden_size),
         activation(),
         nn.BatchNorm1d(hidden_size),
-        nn.Linear(hidden_size, hidden_size // 2),
-        activation(),
-        nn.BatchNorm1d(hidden_size // 2),
         # Final output layer
-        GaussianOutputLayer(hidden_size // 2),
+        GaussianOutputLayer(hidden_size),
     )
 
 
@@ -139,9 +138,9 @@ def train(
     device,
     max_epochs=3000,
     bs=128,
-    lr=1e-4,
+    lr=5e-3,
     warmup=10,
-    patience=1,
+    patience=5,
     **model_params,
 ):
     train_loader = DataLoader(train, batch_size=bs, shuffle=True)
@@ -171,9 +170,9 @@ def train(
             loss.backward()
             optimizer.step()
 
+        model.eval()
         with torch.no_grad():
-            model.eval()
-            val_loss = 0
+            val_loss = 0.0
             for X, y in val_loader:
                 # Move to device
                 X = X.to(device)
@@ -192,7 +191,7 @@ def train(
 
             if best_val_loss is None or val_loss < best_val_loss:
                 best_val_loss = val_loss
-                best_model = model.state_dict()
+                best_model = deepcopy(model.state_dict())
                 best_epoch = epoch
 
             # Early stopping
@@ -328,11 +327,8 @@ if __name__ == "__main__":
     model.eval()
     # Compute MSE and NLL
     val_loader = DataLoader(val_data, batch_size=VAL_BS, shuffle=False)
-    y_true = []
-    pred_mu = []
-    pred_var = []
-    val_nll = 0
-    val_mse = 0
+    pred_mu, pred_var, y_true = [], [], []
+    val_nll, val_mse = 0.0, 0.0
     with torch.no_grad():
         for X, y in val_loader:
             # Move to device
@@ -375,8 +371,3 @@ if __name__ == "__main__":
     )
     print(f"Buy+Hold baseline annualized return: {ret:.2%}")
     print(f"Buy+Hold baseline Sharpe ratio: {sharpe:.2f}")
-
-    # # Get true baseline
-    # ret, sharpe = backtest(backtest_prices, y_true)
-    # print(f"True baseline annualized return: {ret:.2%}")
-    # print(f"True baseline Sharpe ratio: {sharpe:.2f}")
