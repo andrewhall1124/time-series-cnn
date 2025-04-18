@@ -100,29 +100,33 @@ def generate_datasets(data_path="data/wmt_data.parquet.gz"):
     return train, test, test_prices
 
 
-def get_model():
+def get_model(
+    hidden_size=100,
+    n_channels=(25, 12),
+    activation=nn.ReLU,
+):
     # After Conv1: (IM_DIM - 2 + 1) = IM_DIM - 1
     # After Conv2: floor((IM_DIM - 1 - 2) / 2 + 1) = (IM_DIM - 1) // 2
     final_dim = (IM_DIM - 1) // 2
     return nn.Sequential(
         # Conv 1
         # In: IM_DIM x IM_DIM x 1
-        nn.Conv2d(1, 25, kernel_size=2),
-        nn.ReLU(),
-        nn.BatchNorm2d(25),
+        nn.Conv2d(1, n_channels[0], kernel_size=2),
+        activation(),
+        nn.BatchNorm2d(n_channels[0]),
         # Conv 2
-        # In: (IM_DIM - 1) x (IM_DIM - 1) x 25
-        nn.Conv2d(25, 12, kernel_size=2, stride=2),
-        nn.ReLU(),
-        nn.BatchNorm2d(12),
+        # In: (IM_DIM - 1) x (IM_DIM - 1) x n_channels[0]
+        nn.Conv2d(n_channels[0], n_channels[1], kernel_size=2, stride=2),
+        activation(),
+        nn.BatchNorm2d(n_channels[1]),
         # Linear layers
-        # In: final flattened features = 12 * final_dim * final_dim
+        # In: final flattened features = n_channels[1] * final_dim * final_dim
         nn.Flatten(),
-        nn.Linear(12 * final_dim * final_dim, 100),
-        nn.ReLU(),
-        nn.BatchNorm1d(100),
+        nn.Linear(n_channels[1] * final_dim * final_dim, hidden_size),
+        activation(),
+        nn.BatchNorm1d(hidden_size),
         # Final output layer
-        nn.Linear(100, 3),
+        nn.Linear(hidden_size, 3),
     )
 
 

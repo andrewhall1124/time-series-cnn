@@ -52,6 +52,18 @@ After the prior param tuning, I realized I failed to set the seed, which makes m
   - Both => .94 sharpe
   - Only F classif => .94 sharpe
   - Only Mutual Info => .62 sharpe
+- Misc
+  - AdamW => 0.90 sharpe
+  - SeLU => .42 sharpe
+  - LeakyRELU => .75 sharpe
+  - PReLU => .69 sharpe
+  - Basic 2 layer linear => 0.70
+  - Linear Hidden Size 5 => .70
+  - Double channels + hidden => .67 sharpe
+- Label Window
+  - 11 => .64 sharpe (nooooo....looks like re-creating the data toasted our sharpe)
+  - 5 => .23 sharpe
+  - 15 => .23 sharpe
 
 ## Some Param Tuning on 5326e53a0653aa1ac07a2d11097dd0faeab3ab29
 
