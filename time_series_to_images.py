@@ -54,39 +54,57 @@ def generate_datasets(data_path="data/sp_sample.parquet.gz"):
         df = transform(df)
         df.write_parquet(data_path, compression="gzip")
 
-    X = df.drop("ticker", "date", "label")
-    orig_prices = df.select("ticker", "date", "original_close")
-    y = df["label"].cast(pl.Float64)
+    # Train/Test/Validation split by day to avoid data leakage
+    dates = sorted(df["date"].unique().to_list())
+    n_dates = len(dates)
+    train_dates = dates[: int(n_dates * 0.8)]
+    test_dates = dates[int(n_dates * 0.8) : int(n_dates * 0.9)]
+    valid_dates = dates[int(n_dates * 0.9) :]
 
-    # Train and test split (sequential to avoid data leakage)
-    train_size = int(len(X) * 0.8)
-    X_train = X[:train_size]
-    X_test = X[train_size:]
-    y_train = y[:train_size]
-    y_test = y[train_size:]
+    df_train = df.filter(pl.col("date").is_in(train_dates))
+    df_test = df.filter(pl.col("date").is_in(test_dates))
+    df_valid = df.filter(pl.col("date").is_in(valid_dates))
 
-    backtest_prices = orig_prices[train_size:]
+    X_train = df_train.drop(["ticker", "date", "label"])
+    X_test = df_test.drop(["ticker", "date", "label"])
+    X_valid = df_valid.drop(["ticker", "date", "label"])
 
-    # Feature selection
+    y_train = df_train["label"].cast(pl.Float64)
+    y_test = df_test["label"].cast(pl.Float64)
+    y_valid = df_valid["label"].cast(pl.Float64)
+
+    # Backtesting will be performed on the test set (all data for each day is kept together)
+    backtest_prices = df.select("ticker", "date", "original_close").filter(
+        pl.col("date").is_in(test_dates)
+    )
+    assert len(backtest_prices) == len(X_test)
+
+    # Feature selection based on training data
     best_features = select_features(X_train, y_train)
     print("FEATURES", best_features)
     X_train = X_train[best_features]
     X_test = X_test[best_features]
+    X_valid = X_valid[best_features]
 
     # Reshape to 2D images
     X_train = X_train.to_numpy().reshape(-1, 1, IM_DIM, IM_DIM)
     X_test = X_test.to_numpy().reshape(-1, 1, IM_DIM, IM_DIM)
+    X_valid = X_valid.to_numpy().reshape(-1, 1, IM_DIM, IM_DIM)
 
     # Create datasets
     train = torch.utils.data.TensorDataset(
         torch.tensor(X_train, dtype=torch.float32),
         torch.tensor(y_train.to_numpy(), dtype=torch.float32),
     )
+    valid = torch.utils.data.TensorDataset(
+        torch.tensor(X_valid, dtype=torch.float32),
+        torch.tensor(y_valid.to_numpy(), dtype=torch.float32),
+    )
     test = torch.utils.data.TensorDataset(
         torch.tensor(X_test, dtype=torch.float32),
         torch.tensor(y_test.to_numpy(), dtype=torch.float32),
     )
-    return train, test, backtest_prices
+    return train, valid, test, backtest_prices
 
 
 class GaussianOutputLayer(nn.Module):
@@ -229,8 +247,7 @@ def backtest(backtest_df, pred_mu, pred_var, initial_money=10_000, trading_days=
             )
             .with_columns(
                 (
-                    pl.col("weight_numerator")
-                    / (4.0 * pl.col("weight_numerator").abs().sum())
+                    pl.col("weight_numerator") / pl.col("weight_numerator").abs().sum()
                 ).alias("weight")
             )
             .select(pl.col("ticker"), pl.col("weight"), pl.col("original_close"))
@@ -293,10 +310,10 @@ def portfolio_stats(values, trading_days=251):
     return ann_return, sharpe
 
 
-LOAD_MODEL = False
+LOAD_MODEL = True
 if __name__ == "__main__":
     # Generate datasets
-    train_data, val_data, backtest_prices = generate_datasets()
+    train_data, val_data, test_data, backtest_prices = generate_datasets()
 
     device = None
     if torch.backends.mps.is_available():
@@ -326,11 +343,11 @@ if __name__ == "__main__":
     # Evaluate
     model.eval()
     # Compute MSE and NLL
-    val_loader = DataLoader(val_data, batch_size=VAL_BS, shuffle=False)
+    test_loader = DataLoader(test_data, batch_size=VAL_BS, shuffle=False)
     pred_mu, pred_var, y_true = [], [], []
-    val_nll, val_mse = 0.0, 0.0
+    test_nll, test_mse = 0.0, 0.0
     with torch.no_grad():
-        for X, y in val_loader:
+        for X, y in test_loader:
             # Move to device
             X = X.to(device)
             y = y.to(device)
@@ -345,13 +362,13 @@ if __name__ == "__main__":
             y_true.append(y.cpu().numpy())
 
             # Compute NLL and MSE
-            val_nll += F.gaussian_nll_loss(mu, y, var).item()
-            val_mse += F.mse_loss(mu, y).item()
+            test_nll += F.gaussian_nll_loss(mu, y, var).item()
+            test_mse += F.mse_loss(mu, y).item()
 
-        val_nll /= len(val_loader)
-        val_mse /= len(val_loader)
-        print(f"Validation NLL: {val_nll:.4f}")
-        print(f"Validation MSE: {val_mse:.4f}")
+        test_nll /= len(test_loader)
+        test_mse /= len(test_loader)
+        print(f"Test NLL: {test_nll:.4f}")
+        print(f"Test MSE: {test_mse:.4f}")
     pred_mu = np.concatenate(pred_mu)
     pred_var = np.concatenate(pred_var)
     y_true = np.concatenate(y_true)
