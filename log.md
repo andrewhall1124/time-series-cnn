@@ -1,6 +1,5 @@
 # TODO
 
-- Backtesting code
 - Adapt code to work with CRSP data
 - Run model on all securities
 - Hyperparameter tuning
@@ -30,6 +29,7 @@
 - Norm over 365 days doubled returns
 - 3 day label window bumps sharpe up to .62, baseline sharpe up to .82
 - 56 max period bumps sharpe up to .94
+- True baseline sharpe is up to .88, which outperforms buy+hold. Model is still outperforming baseline though, despite lower accuracy...need better metrics
 
 ## Adding additional tickers
 

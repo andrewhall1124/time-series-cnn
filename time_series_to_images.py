@@ -1,15 +1,11 @@
 import torch
 import torch.nn as nn
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-from torch.utils.data import DataLoader, WeightedRandomSampler
+from torch.utils.data import DataLoader
 from tqdm import tqdm
 import numpy as np
-from sklearn.feature_selection import SelectKBest, f_classif, mutual_info_classif
-from sklearn.metrics import (
-    balanced_accuracy_score,
-    classification_report,
-    confusion_matrix,
-)
+from sklearn.feature_selection import SelectKBest, f_classif
+import torch.nn.functional as F
 
 import matplotlib.pyplot as plt
 from data_utils import load_yfinance
@@ -23,31 +19,14 @@ np.random.seed(42)
 torch.cuda.manual_seed_all(42)
 
 IM_DIM = 15
+VAL_BS = 4096
 
 
 def select_features(X, y):
     # Combine F-score and mutual information for feature selection, as per paper
-    selector = SelectKBest(
-        lambda X, y: f_classif(X, y)[0] + mutual_info_classif(X, y), k=IM_DIM**2
-    )
+    selector = SelectKBest(f_classif, k=IM_DIM**2)
     selector.fit(X, y)
     return selector.get_feature_names_out()
-
-
-def get_sampler(target):
-    """
-    Create a weighted random sampler to fix imbalanced classes.
-    Source: https://discuss.pytorch.org/t/how-to-handle-imbalanced-classes/11264/2
-
-    TODO: Use [SMOTE](https://github.com/chingisooinar/SMOTE-Pytorch) instead
-    """
-    class_sample_count = np.array(
-        [len(np.where(target == t)[0]) for t in np.unique(target)]
-    )
-    weight = 1.0 / class_sample_count
-    samples_weight = np.array([weight[t] for t in target], dtype=np.float64)
-    samples_weight = torch.from_numpy(samples_weight)
-    return WeightedRandomSampler(samples_weight, len(samples_weight))
 
 
 def generate_datasets(data_path="data/sp_sample.parquet.gz"):
@@ -76,12 +55,7 @@ def generate_datasets(data_path="data/sp_sample.parquet.gz"):
 
     X = df.drop("ticker", "date", "label")
     orig_prices = df.select("ticker", "date", "original_close")
-    label_map = {
-        "BUY": 0,
-        "SELL": 1,
-        "HOLD": 2,
-    }
-    y = df["label"].replace(label_map).cast(pl.Int8)
+    y = df["label"].cast(pl.Float64)
 
     # Train and test split (sequential to avoid data leakage)
     train_size = int(len(X) * 0.8)
@@ -105,13 +79,25 @@ def generate_datasets(data_path="data/sp_sample.parquet.gz"):
     # Create datasets
     train = torch.utils.data.TensorDataset(
         torch.tensor(X_train, dtype=torch.float32),
-        torch.tensor(y_train.to_numpy(), dtype=torch.long),
+        torch.tensor(y_train.to_numpy(), dtype=torch.float32),
     )
     test = torch.utils.data.TensorDataset(
         torch.tensor(X_test, dtype=torch.float32),
-        torch.tensor(y_test.to_numpy(), dtype=torch.long),
+        torch.tensor(y_test.to_numpy(), dtype=torch.float32),
     )
     return train, test, backtest_prices
+
+
+class GaussianOutputLayer(nn.Module):
+    def __init__(self, in_features):
+        super(GaussianOutputLayer, self).__init__()
+        self.mu = nn.Linear(in_features, 1)
+        self.std = nn.Linear(in_features, 1)
+
+    def forward(self, x):
+        mu = self.mu(x) + 1
+        std = self.std(x)
+        return mu, std**2
 
 
 def get_model(
@@ -139,8 +125,11 @@ def get_model(
         nn.Linear(n_channels[1] * final_dim * final_dim, hidden_size),
         activation(),
         nn.BatchNorm1d(hidden_size),
+        nn.Linear(hidden_size, hidden_size // 2),
+        activation(),
+        nn.BatchNorm1d(hidden_size // 2),
         # Final output layer
-        nn.Linear(hidden_size, 3),
+        GaussianOutputLayer(hidden_size // 2),
     )
 
 
@@ -151,20 +140,16 @@ def train(
     max_epochs=3000,
     bs=128,
     lr=1e-4,
-    warmup=0,
+    warmup=10,
     patience=1,
     **model_params,
 ):
-    train_loader = DataLoader(
-        train,
-        batch_size=bs,
-        sampler=get_sampler(train.tensors[1].numpy()),
-    )
-    val_loader = DataLoader(val, batch_size=4096, shuffle=False)
+    train_loader = DataLoader(train, batch_size=bs, shuffle=True)
+    val_loader = DataLoader(val, batch_size=VAL_BS, shuffle=False)
 
     model = get_model(**model_params).to(device)
 
-    loss_fn = nn.CrossEntropyLoss()
+    loss_fn = nn.GaussianNLLLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     scheduler = ReduceLROnPlateau(optimizer)
 
@@ -180,8 +165,8 @@ def train(
             y = y.to(device)
 
             optimizer.zero_grad()
-            y_pred = model(X)
-            loss = loss_fn(y_pred, y)
+            mu, var = model(X)
+            loss = loss_fn(mu, y, var)
             losses.append(loss.item())
             loss.backward()
             optimizer.step()
@@ -194,15 +179,15 @@ def train(
                 X = X.to(device)
                 y = y.to(device)
 
-                y_pred = model(X)
-                val_loss += loss_fn(y_pred, y).item()
+                mu, var = model(X)
+                val_loss += loss_fn(mu, y, var).item()
             val_loss /= len(val_loader)
             scheduler.step(val_loss)
 
             train_loss = np.mean(losses)
             train_losses[epoch] = train_loss
             val_losses[epoch] = val_loss
-            if epoch % 100 == 0:
+            if epoch % 5 == 0:
                 print(f"Epoch {epoch}: train loss {train_loss}, val loss {val_loss}")
 
             if best_val_loss is None or val_loss < best_val_loss:
@@ -224,43 +209,63 @@ def train(
     return model, train_losses[:epoch], val_losses[:epoch]
 
 
-def backtest(backtest_df, decisions, initial_money=10_000, trading_days=251):
+def backtest(backtest_df, pred_mu, pred_var, initial_money=10_000, trading_days=251):
     """
     Simple backtest returning annualized return and Sharpe ratio
     (assumes zero risk‑free rate).
     """
-    all_values = []
+    values = []
     backtest_df = backtest_df.with_columns(
-        pl.Series("decision", decisions, dtype=pl.Int8)
+        pl.Series(pred_mu).cast(pl.Float64).rename("pred_mu"),
+        pl.Series(pred_var).cast(pl.Float64).rename("pred_var"),
     )
 
-    money_per_ticker = initial_money / backtest_df["ticker"].n_unique()
-    for ticker in backtest_df["ticker"].unique():
-        ticker_data = backtest_df.filter(pl.col("ticker") == ticker).select(
-            pl.col("original_close"), pl.col("decision")
+    money = initial_money
+    allocations = {}
+    for date in backtest_df["date"].unique().sort(descending=False):
+        today = (
+            backtest_df.filter(pl.col("date") == date)
+            .with_columns(
+                (pl.col("pred_mu") / pl.col("pred_var")).alias("weight_numerator")
+            )
+            .with_columns(
+                (
+                    pl.col("weight_numerator")
+                    / (4.0 * pl.col("weight_numerator").abs().sum())
+                ).alias("weight")
+            )
+            .select(pl.col("ticker"), pl.col("weight"), pl.col("original_close"))
         )
 
-        money = money_per_ticker
-        shares = 0.0
-        values = []
-        for price, decision in ticker_data.iter_rows():
-            if decision == 0:  # Buy
-                shares += money / price
-                money = 0.0
-            elif decision == 1:  # Sell
-                money += shares * price
-                shares = 0.0
-            values.append(money + shares * price)
-        all_values.append(values)
+        # Close previous positions
+        for ticker, shares in allocations.items():
+            price = today.filter(pl.col("ticker") == ticker)[
+                "original_close"
+            ].to_numpy()[0]
+            # This could be a buy or sell depending on short vs long
+            money += shares * price
+        allocations = {}
 
-    longest = max(len(v) for v in all_values)
-    values = [
-        # left pad with money_per_ticker to match the length of the longest series
-        np.pad(v, (longest - len(v), 0), constant_values=money_per_ticker)
-        for v in all_values
-    ]
-    values = np.array(values).sum(axis=0)
-    T = len(values)
+        # Open new positions
+        for ticker, weight, price in today.iter_rows():
+            weight = np.clip(weight, -1, 1)
+            # Calculate number of shares to buy (note: allowing fractional shares)
+            shares = money * weight / price
+            allocations[ticker] = shares
+            # Update money
+            money -= shares * price
+
+        # Calculate portfolio value
+        value = 0.0
+        for ticker, shares in allocations.items():
+            price = today.filter(pl.col("ticker") == ticker)[
+                "original_close"
+            ].to_numpy()[0]
+            value += shares * price
+
+        values.append(value + money)
+
+    values = np.array(values)
 
     # Plot value
     plt.plot(values)
@@ -269,8 +274,18 @@ def backtest(backtest_df, decisions, initial_money=10_000, trading_days=251):
     plt.ylabel("Value ($)")
     plt.show()
 
+    return portfolio_stats(values, trading_days)
+
+
+def portfolio_stats(values, trading_days=251):
+    """
+    Calculate portfolio statistics.
+    """
+    values = np.array(values)
+    T = len(values)
+
     # Annualized return
-    ann_return = (values[-1] / initial_money) ** (trading_days / T) - 1
+    ann_return = (values[-1] / values[0]) ** (trading_days / T) - 1
 
     # Daily returns and Sharpe (zero RF)
     daily_rets = values[1:] / values[:-1] - 1
@@ -311,34 +326,57 @@ if __name__ == "__main__":
 
     # Evaluate
     model.eval()
-    test_loader = DataLoader(val_data, batch_size=256, shuffle=False)
+    # Compute MSE and NLL
+    val_loader = DataLoader(val_data, batch_size=VAL_BS, shuffle=False)
     y_true = []
-    y_pred = []
+    pred_mu = []
+    pred_var = []
+    val_nll = 0
+    val_mse = 0
     with torch.no_grad():
-        for X, y in test_loader:
+        for X, y in val_loader:
+            # Move to device
             X = X.to(device)
-            y_true.append(y.numpy())
-            y_pred.append(model(X).argmax(dim=1).cpu().numpy())
-    # Flatten the lists
+            y = y.to(device)
+
+            mu, var = model(X)
+            mu = mu.squeeze()
+            var = var.squeeze()
+
+            # Save predictions
+            pred_mu.append(mu.cpu().numpy())
+            pred_var.append(var.cpu().numpy())
+            y_true.append(y.cpu().numpy())
+
+            # Compute NLL and MSE
+            val_nll += F.gaussian_nll_loss(mu, y, var).item()
+            val_mse += F.mse_loss(mu, y).item()
+
+        val_nll /= len(val_loader)
+        val_mse /= len(val_loader)
+        print(f"Validation NLL: {val_nll:.4f}")
+        print(f"Validation MSE: {val_mse:.4f}")
+    pred_mu = np.concatenate(pred_mu)
+    pred_var = np.concatenate(pred_var)
     y_true = np.concatenate(y_true)
-    y_pred = np.concatenate(y_pred)
 
-    score = balanced_accuracy_score(y_true, y_pred)
-    print(f"Balanced accuracy score: {score:.4f}")
-    print(classification_report(y_true, y_pred, target_names=["BUY", "SELL", "HOLD"]))
-    print("Confusion matrix:")
-    print(confusion_matrix(y_true, y_pred))
-
-    ret, sharpe = backtest(backtest_prices, y_pred)
+    ret, sharpe = backtest(backtest_prices, pred_mu, pred_var)
     print(f"Annualized return: {ret:.2%}")
     print(f"Sharpe ratio: {sharpe:.2f}")
 
     # Get buy baseline
-    ret, sharpe = backtest(backtest_prices, np.zeros(len(backtest_prices)))
+    ret, sharpe = portfolio_stats(
+        backtest_prices.group_by("date")
+        .agg(pl.col("original_close").sum())
+        .sort(pl.col("date"))
+        .select("original_close")
+        .to_numpy()
+        .flatten()
+    )
     print(f"Buy+Hold baseline annualized return: {ret:.2%}")
     print(f"Buy+Hold baseline Sharpe ratio: {sharpe:.2f}")
 
-    # Get true baseline
-    ret, sharpe = backtest(backtest_prices, y_true)
-    print(f"True baseline annualized return: {ret:.2%}")
-    print(f"True baseline Sharpe ratio: {sharpe:.2f}")
+    # # Get true baseline
+    # ret, sharpe = backtest(backtest_prices, y_true)
+    # print(f"True baseline annualized return: {ret:.2%}")
+    # print(f"True baseline Sharpe ratio: {sharpe:.2f}")

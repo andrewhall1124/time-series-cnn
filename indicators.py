@@ -158,7 +158,13 @@ def transform(full_df):
         )
         # Save original close price for backtesting
         df = df.with_columns(original_close.rename("original_close"))
-        df = with_labels(df)
+        # df = with_labels(df)
+        # add label: next day close price / current close price
+        df = df.with_columns((original_close.shift(-1) / original_close).alias("label"))
+        # Check for infinity values
+        if not df.filter(pl.col("label").is_infinite()).is_empty():
+            print(f"Found infinite values in {ticker}")
+            breakpoint()
 
         to_merge.append(df.drop_nans())
     return pl.concat(to_merge).sort("date", descending=False)
