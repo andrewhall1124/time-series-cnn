@@ -13,13 +13,14 @@ from sklearn.metrics import (
 
 import matplotlib.pyplot as plt
 from data_utils import load_yfinance
-from indicators import transform, with_labels
+from indicators import transform
 import polars as pl
 import os
 
 # Set random seed for reproducibility
 torch.manual_seed(42)
 np.random.seed(42)
+torch.cuda.manual_seed_all(42)
 
 IM_DIM = 15
 
@@ -49,16 +50,32 @@ def get_sampler(target):
     return WeightedRandomSampler(samples_weight, len(samples_weight))
 
 
-def generate_datasets(data_path="data/wmt_data.parquet.gz"):
+def generate_datasets(data_path="data/sp_sample.parquet.gz"):
     if os.path.exists(data_path):
-        df = pl.scan_parquet(data_path).collect()
+        df = pl.read_parquet(data_path)
     else:
-        df = load_yfinance(["WMT"])
-        df = with_labels(df)
+        df = load_yfinance(
+            [
+                "MMM",
+                "ABT",
+                "MO",
+                "AEP",
+                "ADM",
+                "BA",
+                "BMY",
+                "CPB",
+                "CAT",
+                "CVX",
+                "CMS",
+                "KO",
+            ],
+            start_date="2010-01-01",
+        )
         df = transform(df)
         df.write_parquet(data_path, compression="gzip")
 
-    X = df.filter(pl.col("ticker") == "WMT").drop("ticker", "date", "label")
+    X = df.drop("ticker", "date", "label")
+    orig_prices = df.select("ticker", "date", "original_close")
     label_map = {
         "BUY": 0,
         "SELL": 1,
@@ -73,10 +90,7 @@ def generate_datasets(data_path="data/wmt_data.parquet.gz"):
     y_train = y[:train_size]
     y_test = y[train_size:]
 
-    # Save original close prices for backtesting
-    test_prices = X_test["original_close"].to_numpy()
-    X_train = X_train.drop("original_close")
-    X_test = X_test.drop("original_close")
+    backtest_prices = orig_prices[train_size:]
 
     # Feature selection
     best_features = select_features(X_train, y_train)
@@ -97,7 +111,7 @@ def generate_datasets(data_path="data/wmt_data.parquet.gz"):
         torch.tensor(X_test, dtype=torch.float32),
         torch.tensor(y_test.to_numpy(), dtype=torch.long),
     )
-    return train, test, test_prices
+    return train, test, backtest_prices
 
 
 def get_model(
@@ -156,7 +170,7 @@ def train(
 
     train_losses = np.zeros(max_epochs)
     val_losses = np.zeros(max_epochs)
-    best_model, best_val_loss = (None, None)
+    best_model, best_val_loss, best_epoch = (None, None, None)
     for epoch in tqdm(range(max_epochs)):
         model.train()
         losses = []
@@ -194,11 +208,12 @@ def train(
             if best_val_loss is None or val_loss < best_val_loss:
                 best_val_loss = val_loss
                 best_model = model.state_dict()
+                best_epoch = epoch
 
             # Early stopping
             if epoch >= patience and epoch > warmup:
                 # Check if validation loss hasn't improved for 'patience' epochs
-                if val_loss >= min(val_losses[max(0, epoch - patience) : epoch]):
+                if val_loss > best_val_loss and epoch - best_epoch >= patience:
                     print(
                         f"Early stopping at epoch {epoch}. No improvement for {patience} epochs."
                     )
@@ -209,25 +224,42 @@ def train(
     return model, train_losses[:epoch], val_losses[:epoch]
 
 
-def backtest(price_history, decisions, initial_money=10_000, trading_days=251):
+def backtest(backtest_df, decisions, initial_money=10_000, trading_days=251):
     """
     Simple backtest returning annualized return and Sharpe ratio
     (assumes zero risk‑free rate).
     """
-    money = initial_money
-    shares = 0.0
-    values = []
+    all_values = []
+    backtest_df = backtest_df.with_columns(
+        pl.Series("decision", decisions, dtype=pl.Int8)
+    )
 
-    for price, decision in zip(price_history, decisions):
-        if decision == 0:  # Buy
-            shares += money / price
-            money = 0.0
-        elif decision == 1:  # Sell
-            money += shares * price
-            shares = 0.0
-        values.append(money + shares * price)
+    money_per_ticker = initial_money / backtest_df["ticker"].n_unique()
+    for ticker in backtest_df["ticker"].unique():
+        ticker_data = backtest_df.filter(pl.col("ticker") == ticker).select(
+            pl.col("original_close"), pl.col("decision")
+        )
 
-    values = np.array(values)
+        money = money_per_ticker
+        shares = 0.0
+        values = []
+        for price, decision in ticker_data.iter_rows():
+            if decision == 0:  # Buy
+                shares += money / price
+                money = 0.0
+            elif decision == 1:  # Sell
+                money += shares * price
+                shares = 0.0
+            values.append(money + shares * price)
+        all_values.append(values)
+
+    longest = max(len(v) for v in all_values)
+    values = [
+        # left pad with money_per_ticker to match the length of the longest series
+        np.pad(v, (longest - len(v), 0), constant_values=money_per_ticker)
+        for v in all_values
+    ]
+    values = np.array(values).sum(axis=0)
     T = len(values)
 
     # Plot value
@@ -300,3 +332,13 @@ if __name__ == "__main__":
     ret, sharpe = backtest(backtest_prices, y_pred)
     print(f"Annualized return: {ret:.2%}")
     print(f"Sharpe ratio: {sharpe:.2f}")
+
+    # Get buy baseline
+    ret, sharpe = backtest(backtest_prices, np.zeros(len(backtest_prices)))
+    print(f"Buy+Hold baseline annualized return: {ret:.2%}")
+    print(f"Buy+Hold baseline Sharpe ratio: {sharpe:.2f}")
+
+    # Get true baseline
+    ret, sharpe = backtest(backtest_prices, y_true)
+    print(f"True baseline annualized return: {ret:.2%}")
+    print(f"True baseline Sharpe ratio: {sharpe:.2f}")

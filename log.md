@@ -25,6 +25,37 @@
 
 # Training Log
 
+## Adding additional
+
+- Added both Walmart and Apple starting in the 80s...Sharpe was really bad, negative returns. Testing period was 2016-2024
+- Starting in 2010 was better, got .78 sharpe.
+- Addded 10 stocks...not great:
+
+```
+Balanced accuracy score: 0.8040
+              precision    recall  f1-score   support
+
+         BUY       0.43      0.86      0.57       957
+        SELL       0.55      0.83      0.66      1151
+        HOLD       0.94      0.71      0.81      6578
+
+    accuracy                           0.75      8686
+   macro avg       0.64      0.80      0.68      8686
+weighted avg       0.83      0.75      0.76      8686
+
+Confusion matrix:
+[[ 827   17  113]
+ [  14  961  176]
+ [1104  785 4689]]
+Annualized return: 2.65%
+Sharpe ratio: 0.34
+Buy+Hold baseline annualized return: 5.65%
+Buy+Hold baseline Sharpe ratio: 0.47
+True baseline annualized return: 1.71%
+True baseline Sharpe ratio: 0.25
+```
+Model is doing what it can, but I think we're hitting limitations of data/loss function
+
 ## Fixed Param Tuning on 53e5ac2d3618fe83f0b516f83a044d8196930976
 
 After the prior param tuning, I realized I failed to set the seed, which makes my results non-deterministic. I fixed that, and re-ran a lot of param tuning.

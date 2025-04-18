@@ -8,11 +8,13 @@ MAX_PERIOD = 28
 NORM_WINDOW = 56
 
 
-def with_labels(full_df):
+def with_labels(df):
+    """
+    Add labels for a df with a single ticker.
+    """
+    assert df["ticker"].n_unique() == 1
     return (
-        full_df.with_columns(
-            pl.col("close").shift(LABEL_WINDOW // 2).alias("rolling_mid")
-        )
+        df.with_columns(pl.col("close").shift(LABEL_WINDOW // 2).alias("rolling_mid"))
         .with_columns(
             pl.col("close").rolling_max(window_size=LABEL_WINDOW).alias("rolling_max"),
             pl.col("close").rolling_min(window_size=LABEL_WINDOW).alias("rolling_min"),
@@ -32,7 +34,12 @@ def with_labels(full_df):
 def transform(full_df):
     to_merge = []
     for ticker in full_df["ticker"].unique():
-        df = full_df.filter(pl.col("ticker") == ticker).sort("date")
+        print(f"Processing {ticker}")
+        df = (
+            full_df.filter(pl.col("ticker") == ticker)
+            .sort("date", descending=False)
+            .drop_nans()
+        )
         for period in range(6, MAX_PERIOD):
             new_cols = []
             new_cols.append(
@@ -151,6 +158,7 @@ def transform(full_df):
         )
         # Save original close price for backtesting
         df = df.with_columns(original_close.rename("original_close"))
+        df = with_labels(df)
 
         to_merge.append(df.drop_nans())
-    return pl.concat(to_merge)
+    return pl.concat(to_merge).sort("date", descending=False)
