@@ -149,10 +149,27 @@ def clean_raw_crsp_file(raw_file_path: str, clean_file_path: str) -> None:
 
 
 def load_daily_crsp(start_date: date, end_date: date) -> pl.LazyFrame:
+    # Read and initially filter the data
+    df_raw = pl.read_parquet("data/crsp_daily.parquet").filter(
+        pl.col("date").is_between(start_date, end_date)
+    )
+    # Identify permnos with minimum price >= 1 and more than 600 rows of data
+    valid_permnos = (
+        df_raw.group_by("permno")
+        .agg(
+            [
+                pl.col("prc").min().alias("min_prc"),
+                pl.count().alias("n_rows"),
+            ]
+        )
+        .filter((pl.col("min_prc") >= 0.5) & (pl.col("n_rows") > 600))
+        .select("permno")
+    )
+    # Keep only rows from valid permnos
+    df_filtered = df_raw.join(valid_permnos, on="permno", how="inner")
+
     return (
-        pl.read_parquet("data/crsp_daily.parquet")
-        .filter(pl.col("date").is_between(start_date, end_date))
-        .filter(pl.col("prc").ge(5))
+        df_filtered.sort(["permno", "date"])
         .with_columns(
             pl.col("ret")
             .shift(1)
@@ -165,9 +182,9 @@ def load_daily_crsp(start_date: date, end_date: date) -> pl.LazyFrame:
         )
         .with_columns(pl.lit(1).mul(pl.col("cumret").add(1)).alias("close"))
         .with_columns(
-            pl.col("openprc").truediv(pl.col("prc")).mul("close").alias("open"),
-            pl.col("askhi").truediv(pl.col("prc")).mul("close").alias("high"),
-            pl.col("bidlo").truediv(pl.col("prc")).mul("close").alias("low"),
+            pl.col("openprc").truediv(pl.col("prc")).mul(pl.col("close")).alias("open"),
+            pl.col("askhi").truediv(pl.col("prc")).mul(pl.col("close")).alias("high"),
+            pl.col("bidlo").truediv(pl.col("prc")).mul(pl.col("close")).alias("low"),
             pl.col("vol").alias("volume"),
         )
         .select("date", "ticker", "permno", "open", "high", "low", "close", "volume")

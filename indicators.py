@@ -1,15 +1,17 @@
 import talib
 import polars as pl
-from concurrent.futures import ThreadPoolExecutor
+import sqlite3
 from ta.volume import ChaikinMoneyFlowIndicator, EaseOfMovementIndicator
 from ta.trend import dpo, kst
 from tqdm import tqdm
 import numpy as np
-import os
+import datetime
+from data_utils import load_daily_crsp
 
 # Configuration constants
 MAX_PERIOD = 56
-NORM_WINDOW = 365
+NORM_WINDOW = 251
+DB_PATH = "./data/features.sqlite"
 
 
 def compute_features(df: pl.DataFrame) -> pl.DataFrame:
@@ -30,7 +32,6 @@ def compute_features(df: pl.DataFrame) -> pl.DataFrame:
 
         macd, _, _ = talib.MACD(close, fastperiod=p, slowperiod=2 * p + 2)
         feature_dict[f"macd_{p}"] = macd
-
         feature_dict[f"ppo_{p}"] = talib.PPO(close, fastperiod=p, slowperiod=2 * p + 2)
         feature_dict[f"roc_{p}"] = talib.ROC(close, timeperiod=p)
 
@@ -61,7 +62,6 @@ def compute_features(df: pl.DataFrame) -> pl.DataFrame:
         feature_dict[f"dpo_{p}"] = dpo(
             close=df["close"].to_pandas(), window=p
         ).to_numpy()
-
         feature_dict[f"kst_{p}"] = kst(
             close=df["close"].to_pandas(),
             window1=p,
@@ -85,15 +85,13 @@ def compute_features(df: pl.DataFrame) -> pl.DataFrame:
         feature_dict[f"dmi_{p}"] = talib.DX(high, low, close, timeperiod=p)
         feature_dict[f"psar_{p}"] = talib.SAR(high, low)
 
-    feature_df = pl.DataFrame(feature_dict)
-    return df.with_columns(feature_df)
+    return df.with_columns(pl.DataFrame(feature_dict))
 
 
 def normalize_and_label(df: pl.DataFrame) -> pl.DataFrame:
     """
     Normalize numeric columns over a rolling window and add label columns.
     """
-    # identify numeric columns
     num_cols = [
         c
         for c, dt in df.schema.items()
@@ -106,57 +104,75 @@ def normalize_and_label(df: pl.DataFrame) -> pl.DataFrame:
         exprs.append(((pl.col(c) - rmin) / (rmax - rmin)).alias(c))
 
     df = df.with_columns(exprs)
-    orig = df["close"]
+    close = df["close"]
     df = df.with_columns(
-        orig.alias("original_close"), (orig.shift(-1) / orig).alias("label")
+        close.alias("original_close"), (close.shift(-1) / close).alias("label")
     )
     return df
 
 
-def process_and_save(df: pl.DataFrame, permno: int, out_dir: str) -> None:
+def transform_and_save(full_df: pl.DataFrame, db_path: str = DB_PATH) -> None:
     """
-    Process one permno group & save result to disk if not empty.
+    Transform a full DataFrame into a SQLite DB of features & labels.
     """
-    df = df.sort("date").drop_nulls()
-    if len(df) < NORM_WINDOW * 2:
-        return
-    df = compute_features(df)
-    df = normalize_and_label(df).drop_nulls()
-    if df.is_empty():
-        return
-    os.makedirs(out_dir, exist_ok=True)
-    df.write_parquet(os.path.join(out_dir, f"{permno}.parquet"))
+    conn = sqlite3.connect(db_path)
+    # Speed up writes
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA synchronous=OFF;")
+    conn.execute("PRAGMA temp_store=MEMORY;")
+    cursor = conn.cursor()
 
+    # Drop any existing table
+    cursor.execute("DROP TABLE IF EXISTS features;")
+    table_created = False
 
-def transform(full_df: pl.DataFrame) -> pl.DataFrame:
-    """
-    Transform a full DataFrame (multiple permnos) into a single DataFrame
-    with features and labels, using multiprocessing across permno groups.
-    """
-    # split into per-permno lists
     permnos = full_df["permno"].unique().to_list()
-    groups = [(full_df.filter(pl.col("permno") == p), p) for p in permnos]
-
-    with ThreadPoolExecutor() as executor:
-        list(
-            tqdm(
-                executor.map(
-                    lambda args: process_and_save(*args, "./data/temp"), groups
-                ),
-                total=len(groups),
-            )
+    for permno in tqdm(permnos):
+        df = (
+            full_df.filter(pl.col("permno") == permno)
+            .sort("date")
+            .drop_nulls()
+            .drop_nans()
         )
+        if len(df) < NORM_WINDOW * 2:
+            continue
 
-    # Load and concat
-    results = []
-    for permno in permnos:
-        file_path = os.path.join("./data/temp", f"{permno}.parquet")
-        if os.path.exists(file_path):
-            results.append(
-                pl.read_parquet(file_path).with_columns(pl.lit(permno).alias("permno"))
-            )
+        df_feat = compute_features(df)
+        df_norm = normalize_and_label(df_feat).drop_nulls().drop_nans()
+        if df_norm.is_empty():
+            continue
 
-    # This line fails: TODO switch to data iterator
-    return (
-        pl.concat(results).sort("date", descending=False) if results else pl.DataFrame()
+        # add permno column
+        df_out = df_norm.with_columns(pl.lit(permno).alias("permno"))
+        cols = df_out.columns
+
+        if not table_created:
+            # create table based on schema
+            col_defs = []
+            for col, dtype in df_out.schema.items():
+                if dtype == pl.Utf8:
+                    col_type = "TEXT"
+                elif dtype in (pl.Int64, pl.Int32):
+                    col_type = "INTEGER"
+                else:
+                    col_type = "REAL"
+                col_defs.append(f"{col} {col_type}")
+            cursor.execute(f"CREATE TABLE features ({', '.join(col_defs)});")
+            table_created = True
+
+        placeholders = ",".join(["?" for _ in cols])
+        insert_sql = (
+            f"INSERT INTO features ({', '.join(cols)}) VALUES ({placeholders});"
+        )
+        rows = df_out.select(cols).rows()
+        cursor.executemany(insert_sql, rows)
+        conn.commit()
+    conn.close()
+
+
+if __name__ == "__main__":
+    # Example usage:
+    df = load_daily_crsp(
+        start_date=datetime.date(2009, 1, 1), end_date=datetime.date(2025, 3, 31)
     )
+    transform_and_save(df)

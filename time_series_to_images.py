@@ -9,8 +9,7 @@ import torch.nn.functional as F
 from copy import deepcopy
 import datetime
 import matplotlib.pyplot as plt
-from data_utils import load_daily_crsp
-from indicators import transform
+from indicators import transform_and_save
 import polars as pl
 import os
 
@@ -35,10 +34,9 @@ def generate_datasets(data_path="data/full.parquet.gz"):
         df = pl.read_parquet(data_path)
     else:
         df = load_daily_crsp(
-            start_date=datetime.date(2009, 1, 1), end_date=datetime.date(2024, 12, 31)
+            start_date=datetime.date(2009, 1, 1), end_date=datetime.date(2025, 3, 31)
         )
-        df = transform(df)
-        df.write_parquet(data_path, compression="gzip")
+        df = transform_and_save(df)
 
     # Train/Test/Validation split by day to avoid data leakage
     dates = sorted(df["date"].unique().to_list())
