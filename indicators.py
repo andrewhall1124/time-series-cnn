@@ -1,6 +1,7 @@
 import talib
 import polars as pl
 import ta
+from tqdm import tqdm
 
 
 LABEL_WINDOW = 3
@@ -10,9 +11,9 @@ NORM_WINDOW = 365
 
 def with_labels(df):
     """
-    Add labels for a df with a single ticker.
+    Add labels for a df with a single permno.
     """
-    assert df["ticker"].n_unique() == 1
+    assert df["permno"].n_unique() == 1
     return (
         df.with_columns(pl.col("close").shift(LABEL_WINDOW // 2).alias("rolling_mid"))
         .with_columns(
@@ -33,13 +34,14 @@ def with_labels(df):
 
 def transform(full_df):
     to_merge = []
-    for ticker in full_df["ticker"].unique():
-        print(f"Processing {ticker}")
+    for permno in tqdm(full_df["permno"].unique()):
         df = (
-            full_df.filter(pl.col("ticker") == ticker)
+            full_df.filter(pl.col("permno") == permno)
             .sort("date", descending=False)
             .drop_nans()
         )
+        if len(df) < NORM_WINDOW * 2:
+            continue
         for period in range(6, MAX_PERIOD):
             new_cols = []
             new_cols.append(
@@ -74,15 +76,16 @@ def transform(full_df):
             new_cols.append(
                 talib.ROC(df["close"], timeperiod=period).rename(f"roc_{period}")
             )
-            mfv = (
-                ((df["close"] - df["low"]) - (df["high"] - df["close"]))
-                / (df["high"] - df["low"])
-            ) * df["volume"]
             new_cols.append(
-                (
-                    mfv.rolling_sum(window_size=period)
-                    / df["volume"].rolling_sum(window_size=period)
-                ).rename(f"cmfi_{period}")
+                pl.from_pandas(
+                    ta.volume.ChaikinMoneyFlowIndicator(
+                        high=df["high"].to_pandas(),
+                        low=df["low"].to_pandas(),
+                        close=df["close"].to_pandas(),
+                        volume=df["volume"].to_pandas(),
+                        window=period,
+                    ).chaikin_money_flow()
+                ).rename(f"cmfi_{period}"),
             )
             new_cols.append(
                 talib.CMO(df["close"], timeperiod=period).rename(f"cmo_{period}")
@@ -163,8 +166,10 @@ def transform(full_df):
         df = df.with_columns((original_close.shift(-1) / original_close).alias("label"))
         # Check for infinity values
         if not df.filter(pl.col("label").is_infinite()).is_empty():
-            print(f"Found infinite values in {ticker}")
+            print(f"Found infinite values in {permno}")
             breakpoint()
 
+        if not len(df.drop_nans()):
+            breakpoint()
         to_merge.append(df.drop_nans())
     return pl.concat(to_merge).sort("date", descending=False)

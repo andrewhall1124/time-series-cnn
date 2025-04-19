@@ -7,9 +7,9 @@ import numpy as np
 from sklearn.feature_selection import SelectKBest, f_classif
 import torch.nn.functional as F
 from copy import deepcopy
-
+import datetime
 import matplotlib.pyplot as plt
-from data_utils import load_yfinance
+from data_utils import load_daily_crsp
 from indicators import transform
 import polars as pl
 import os
@@ -30,26 +30,12 @@ def select_features(X, y):
     return selector.get_feature_names_out()
 
 
-def generate_datasets(data_path="data/sp_sample.parquet.gz"):
+def generate_datasets(data_path="data/full.parquet.gz"):
     if os.path.exists(data_path):
         df = pl.read_parquet(data_path)
     else:
-        df = load_yfinance(
-            [
-                "MMM",
-                "ABT",
-                "MO",
-                "AEP",
-                "ADM",
-                "BA",
-                "BMY",
-                "CPB",
-                "CAT",
-                "CVX",
-                "CMS",
-                "KO",
-            ],
-            start_date="2009-01-01",
+        df = load_daily_crsp(
+            start_date=datetime.date(2009, 1, 1), end_date=datetime.date(2024, 12, 31)
         )
         df = transform(df)
         df.write_parquet(data_path, compression="gzip")
@@ -65,16 +51,20 @@ def generate_datasets(data_path="data/sp_sample.parquet.gz"):
     df_test = df.filter(pl.col("date").is_in(test_dates))
     df_valid = df.filter(pl.col("date").is_in(valid_dates))
 
-    X_train = df_train.drop(["ticker", "date", "label"])
-    X_test = df_test.drop(["ticker", "date", "label"])
-    X_valid = df_valid.drop(["ticker", "date", "label"])
+    # TODO: compute covariance from last 100 days of training
+    # from sklearn.covariance import LedoitWolf
+    # Σ = LedoitWolf().fit(window).covariance_
+
+    X_train = df_train.drop(["permno", "date", "label"])
+    X_test = df_test.drop(["permno", "date", "label"])
+    X_valid = df_valid.drop(["permno", "date", "label"])
 
     y_train = df_train["label"].cast(pl.Float64)
     y_test = df_test["label"].cast(pl.Float64)
     y_valid = df_valid["label"].cast(pl.Float64)
 
     # Backtesting will be performed on the test set (all data for each day is kept together)
-    backtest_prices = df.select("ticker", "date", "original_close").filter(
+    backtest_prices = df.select("permno", "date", "original_close").filter(
         pl.col("date").is_in(test_dates)
     )
     assert len(backtest_prices) == len(X_test)
@@ -250,12 +240,12 @@ def backtest(backtest_df, pred_mu, pred_var, initial_money=10_000, trading_days=
                     pl.col("weight_numerator") / pl.col("weight_numerator").abs().sum()
                 ).alias("weight")
             )
-            .select(pl.col("ticker"), pl.col("weight"), pl.col("original_close"))
+            .select(pl.col("permno"), pl.col("weight"), pl.col("original_close"))
         )
 
         # Close previous positions
-        for ticker, shares in allocations.items():
-            price = today.filter(pl.col("ticker") == ticker)[
+        for permno, shares in allocations.items():
+            price = today.filter(pl.col("permno") == permno)[
                 "original_close"
             ].to_numpy()[0]
             # This could be a buy or sell depending on short vs long
@@ -263,18 +253,18 @@ def backtest(backtest_df, pred_mu, pred_var, initial_money=10_000, trading_days=
         allocations = {}
 
         # Open new positions
-        for ticker, weight, price in today.iter_rows():
+        for permno, weight, price in today.iter_rows():
             weight = np.clip(weight, -1, 1)
             # Calculate number of shares to buy (note: allowing fractional shares)
             shares = money * weight / price
-            allocations[ticker] = shares
+            allocations[permno] = shares
             # Update money
             money -= shares * price
 
         # Calculate portfolio value
         value = 0.0
-        for ticker, shares in allocations.items():
-            price = today.filter(pl.col("ticker") == ticker)[
+        for permno, shares in allocations.items():
+            price = today.filter(pl.col("permno") == permno)[
                 "original_close"
             ].to_numpy()[0]
             value += shares * price

@@ -55,7 +55,9 @@ def load_yfinance(
     return df.rename({col: col.lower() for col in df.columns}).cast(YFINANCE_SCHEMA)
 
 
-def generate_annotations(df: pl.DataFrame, ticker_col: str, window: int) -> pl.DataFrame:
+def generate_annotations(
+    df: pl.DataFrame, ticker_col: str, window: int
+) -> pl.DataFrame:
     return (
         df
         # Compute returns
@@ -146,31 +148,39 @@ def clean_raw_crsp_file(raw_file_path: str, clean_file_path: str) -> None:
     df.write_parquet(clean_file_path)
 
 
-def load_daily_crsp(start_date: date, end_date: date, look_back: int) -> pl.LazyFrame:
+def load_daily_crsp(start_date: date, end_date: date) -> pl.LazyFrame:
     return (
         pl.read_parquet("data/crsp_daily.parquet")
         .filter(pl.col("date").is_between(start_date, end_date))
-        .filter(pl.col('prc').ge(5))
+        .filter(pl.col("prc").ge(5))
         .with_columns(
-            pl.col("ret").shift(1).fill_null(0).add(1).cum_prod().sub(1).over('permno').alias("cumret")
+            pl.col("ret")
+            .shift(1)
+            .fill_null(0)
+            .add(1)
+            .cum_prod()
+            .sub(1)
+            .over("permno")
+            .alias("cumret")
         )
-        .with_columns(pl.lit(1).mul(pl.col("cumret").add(1)).alias('close'))
+        .with_columns(pl.lit(1).mul(pl.col("cumret").add(1)).alias("close"))
         .with_columns(
-            pl.col('openprc').truediv(pl.col('prc')).mul('close').alias('open'),
-            pl.col('askhi').truediv(pl.col('prc')).mul('close').alias('high'),
-            pl.col('bidlo').truediv(pl.col('prc')).mul('close').alias('low'),
-            pl.col('vol').alias('volume'),
-            pl.col("close").rolling_mean(window_size=look_back, min_samples=1).over('permno').alias("ma")
+            pl.col("openprc").truediv(pl.col("prc")).mul("close").alias("open"),
+            pl.col("askhi").truediv(pl.col("prc")).mul("close").alias("high"),
+            pl.col("bidlo").truediv(pl.col("prc")).mul("close").alias("low"),
+            pl.col("vol").alias("volume"),
         )
-        .select('date', 'permno', 'open', 'high', 'low', 'close', 'volume', 'ma')
+        .select("date", "ticker", "permno", "open", "high", "low", "close", "volume")
+        .cast({"permno": pl.String})
     )
+
 
 def load_daily_crsp_annotations(start_date: date, end_date: date) -> pl.LazyFrame:
     return (
         pl.read_parquet("data/crsp_daily.parquet")
         .filter(pl.col("date").is_between(start_date, end_date))
-        .filter(pl.col('prc').ge(5))
-        .select('date', 'permno', 'ticker', 'prc', 'ret')
+        .filter(pl.col("prc").ge(5))
+        .select("date", "permno", "ticker", "prc", "ret")
     )
 
 
@@ -179,9 +189,7 @@ if __name__ == "__main__":
 
     print(df)
 
-    annotations = generate_annotations(df, 'permno', 20)
+    annotations = generate_annotations(df, "permno", 20)
     annotations.write_csv("data/annotations_20.csv")
 
-    print(annotations) 
-
-    
+    print(annotations)
